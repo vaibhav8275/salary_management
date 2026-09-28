@@ -72,8 +72,8 @@ How each technology is used is described in
 ## What the System Does
 
 - **Employee directory** — search by employee ID or name, filter by department
-  and country, paginate results, and view employee details across roughly 10,000
-  employees.
+  and country, paginate results, and view employee details (including job title)
+  across roughly 10,000 employees.
 - **Salary management** — view current salary, create and correct salary records
   across effective periods, and keep salary history instead of overwriting it.
 - **Audit history** — see what changed, when, and who changed it, and revert an

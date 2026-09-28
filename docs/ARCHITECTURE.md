@@ -212,6 +212,14 @@ employees.department_id ─┤
 page of 25 employees therefore renders from one Redis round trip instead of a
 join per row or a lookup map assembled per request.
 
+**What is deliberately not cached.** `job_titles` (LLD §2.9) is a fourth
+reference table but it is not in Redis. The cache pays for itself because the
+three cached tables sit on the salary/currency path — read on nearly every
+request, grouped by in every report. A title never decides a monetary amount or
+a report group; the employee directory is its only reader, so the joins it adds
+per page are not worth a cache key and its invalidation rules. It stays a plain
+keyed table.
+
 **Why it is permanent.** These rows are not volatile: they change when reference
 data is added, not as a side effect of using the system. An expiring cache would
 reintroduce the database reads it exists to avoid. The cache is instead reloaded
@@ -294,6 +302,7 @@ the left, it is probably in the wrong place.
 | Salary business data           | `SalaryRecord`        |
 | Failed rows                    | `SalaryImportError`   |
 | Valid currencies, countries, departments | PostgreSQL, cached in Redis (§4.6) |
+| Job titles (roles an employee holds)     | PostgreSQL, plain keyed table (§4.6) |
 | Who/what changed a salary      | PaperTrail            |
 | Which import caused a change   | PaperTrail metadata   |
 

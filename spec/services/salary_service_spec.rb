@@ -15,6 +15,10 @@ RSpec.describe "SalaryService", type: :service do
   let(:service) { SalaryService.new }
   let(:employee) { create(:employee) }
 
+  def records_for(employee)
+    SalaryRecord.where(employee: employee)
+  end
+
   describe "#current_salary_record" do
     # LLD §5.1 — the record with the latest effective date that is not in the
     # future.
@@ -150,8 +154,10 @@ RSpec.describe "SalaryService", type: :service do
   end
 
   describe "#apply_imported_salary" do
-    # LLD §8.4 — the worked example, one row at a time.
-    let(:existing) { create(:salary_record, employee: employee, effective_date: Date.new(2026, 1, 1), base_salary: 60_000) }
+    # LLD §8.4 — the worked example, one row at a time. Eager so every example
+    # below starts with the 2026 period already in place (the rows being
+    # applied are decided against it).
+    let!(:existing) { create(:salary_record, employee: employee, effective_date: Date.new(2026, 1, 1), base_salary: 60_000) }
 
     it "creates a new period for a newer effective date" do
       salary_import = create(:salary_import)

@@ -17,6 +17,7 @@ Employee
   │
   ├── belongs_to :department
   ├── belongs_to :country
+  ├── belongs_to :job_title
   └── has_one :currency, through: :country
 
 SalaryRecord
@@ -38,17 +39,24 @@ Department
   │
   └── has_many :employees
 
+JobTitle
+  │
+  └── has_many :employees
+
 Currency
   │
   └── referenced by countries (authoritative source of a salary's currency)
 ```
 
-`department` and `country` are reference tables rather than free-text columns, and
-a currency belongs to a **country**, not to an employee. An employee's salary
-currency is therefore reached as `employee.country.currency`: the path is fixed by
-the data model, so an employee cannot be paid in a currency their country does not
-use, and the currency of a salary record cannot drift away from the employee's
-country.
+`department`, `country` and `job_title` are reference tables rather than
+free-text columns, and a currency belongs to a **country**, not to an employee.
+An employee's salary currency is therefore reached as
+`employee.country.currency`: the path is fixed by the data model, so an employee
+cannot be paid in a currency their country does not use, and the currency of a
+salary record cannot drift away from the employee's country. Likewise, a person's
+role is a `job_title` row (§2.9) so that "Software Engineer", "software engineer"
+and "Software  Engineer" cannot enter as three different roles and split a
+title-based report.
 
 An employee has many salary records so that salary history is preserved rather
 than overwritten:
@@ -65,10 +73,11 @@ Employee E1001
 
 | Entity                | Owns                                                                       |
 | --------------------- | -------------------------------------------------------------------------- |
-| `Employee`            | Who the person is and how to find them; placed in a department and a country |
+| `Employee`            | Who the person is and how to find them; placed in a department, a job title and a country |
 | `SalaryRecord`        | The complete compensation state effective from a date, in the currency of the employee's country |
 | `Country`             | Where an employee works, and the currency they are paid in                   |
 | `Department`          | Which part of the company an employee belongs to                             |
+| `JobTitle`            | Which role an employee holds; one canonical spelling per role                 |
 | `Currency`            | Valid currency values and their display                                      |
 | `SalaryImport`        | What happened during one bulk operation                                      |
 | `SalaryImportError`   | Why an individual row was rejected or skipped                                |
@@ -84,6 +93,7 @@ first_name
 last_name
 email
 department_id
+job_title_id
 country_id
 hire_date
 created_at
@@ -97,6 +107,7 @@ updated_at
 | `last_name`    | `string`   |   No | Employee last name                 |
 | `email`        | `string`   |   No | Employee email; add unique index   |
 | `department_id`| `bigint`   |   No | FK → `departments.id`             |
+| `job_title_id` | `bigint`   |   No | FK → `job_titles.id`              |
 | `country_id`   | `bigint`   |   No | FK → `countries.id`                |
 | `hire_date`    | `date`     |   No | Employee joining date              |
 | `created_at`   | `datetime` |   No | Rails timestamp                    |
@@ -110,7 +121,9 @@ is an attribute of a country (§2.3), so the employee's currency is
 `employees.country_id → countries.currency_id`. The two things a free-text
 `department`/`country` pair plus a separate `currency_id` got wrong — a
 misspelled department entering the data, and a country whose currency disagreed
-with the employee's — are both structurally impossible this way.
+with the employee's — are both structurally impossible this way. The title is the
+same kind of decision: `job_title_id` (§2.9) instead of a free-text `job_title`
+column.
 
 ### 2.2 `currencies`
 
@@ -199,8 +212,10 @@ updated_at
 and the "average salary by department" and "total payroll by department" reports
 group by it, and a duplicated or misspelled name would fragment both.
 
-`currencies`, `countries` and `departments` are the three reference tables, and
-all three are cached permanently in Redis — see §2.8.
+`currencies`, `countries`, `departments` and `job_titles` are the four reference
+tables. The first three are cached permanently in Redis — see §2.8. `job_titles`
+(§2.9) is the exception: it never decides a monetary amount or a report group, so
+it is left uncached.
 
 ### 2.5 `salary_records`
 
@@ -311,10 +326,11 @@ without re-uploading the file.
 ### 2.8 Reference data cache
 
 `currencies` (§2.2), `countries` (§2.3) and `departments` (§2.4) are the three
-reference tables. Each holds tens of rows, is written almost never — the seeds or
-an occasional administrative correction — and is read on nearly every request:
-the employee directory renders a department and a country per row, salary detail
-renders a currency, and every report groups by one or more of them.
+reference tables that earn a cache. Each holds tens of rows, is written almost
+never — the seeds or an occasional administrative correction — and is read on
+nearly every request: the employee directory renders a department and a country
+per row, salary detail renders a currency, and every report groups by one or more
+of them.
 
 That asymmetry is the whole justification for caching them permanently in Redis.
 Resolving the same three tables through PostgreSQL means a join per row, or a
@@ -353,6 +369,52 @@ name-to-id lookups the directory filters and CSV import need. The deployment
 topology and the reasoning behind it are in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) §4.6 and §7.2.
 
+`job_titles` is a fourth reference table that is deliberately **not** cached.
+The criterion for the cache is being on the salary/currency decision path — read
+on nearly every request and grouped by in every report. A title never affects a
+monetary amount or a report group; the employee directory is its only reader, so
+the few joins it adds per page are not worth a cache key and its invalidation
+rules. It stays a plain keyed table.
+
+### 2.9 `job_titles`
+
+```text
+id
+title
+created_at
+updated_at
+```
+
+| Field        | Rails type | Null | Notes                                    |
+| ------------ | ---------- | ---: | ---------------------------------------- |
+| `id`         | `bigint`   |   No | Rails default primary key                |
+| `title`      | `string`   |   No | Canonical role name — Software Engineer; indexed, not unique |
+| `created_at` | `datetime` |   No | Rails timestamp                          |
+| `updated_at` | `datetime` |   No | Rails timestamp                          |
+
+A job title is reference data an employee belongs to, like a department but for
+the person's role. Two rules keep one role as one row:
+
+- **Normalization before validation.** The title is stripped and interior spaces
+  are squeezed, so `"  Software   Engineer  "` is stored as `"Software Engineer"`.
+- **Case-insensitive uniqueness.** A second row differing only by case is
+  rejected, so `"SOFTWARE ENGINEER"` cannot become a sibling of
+  `"Software Engineer"` and split a title-based report in two.
+
+Unlike `departments.name` and `countries.name`, the uniqueness is **not** a
+database constraint: PostgreSQL has no case-insensitive unique index without an
+extension, and adding that extension is heavier than the protection is worth for
+a write-almost-never table whose rows are validated on every write path anyway.
+The database still enforces NOT NULL and the foreign key from `employees`
+(§2.1, §3); the case-insensitive uniqueness lives in the model
+(`validates :title, uniqueness: { case_sensitive: false }`, §11).
+
+The `title` index is non-unique and exists for the name-to-id lookups — the
+directory and any future CSV column that names a role. Reporting by title is
+supported by the association (`Employee` joins/where through
+`job_titles.title`), which is exactly how the department and country reports are
+expressed.
+
 ## 3. Data Integrity
 
 Use database constraints where practical; application validations provide the
@@ -361,6 +423,7 @@ friendly errors.
 ```text
 employees.country_id          → FOREIGN KEY → countries.id
 employees.department_id       → FOREIGN KEY → departments.id
+employees.job_title_id        → FOREIGN KEY → job_titles.id, NOT NULL
 countries.currency_id         → FOREIGN KEY → currencies.id
 salary_records.employee_id     → FOREIGN KEY → employees.id
 salary_records.base_salary     → non-negative, required
@@ -387,6 +450,11 @@ conventional. The unique reference-data names prevent the same department or
 country existing twice under one name, which would split a report in two (§2.3,
 §2.4).
 
+`job_titles` is the one reference table whose uniqueness cannot be a database
+constraint: PostgreSQL has no case-insensitive unique index without an extension.
+The NOT NULL foreign key and the `title` index are in the database, and the
+case-insensitive uniqueness itself is a model rule (§2.9).
+
 ## 4. Indexes
 
 Initial indexes to consider:
@@ -394,14 +462,19 @@ Initial indexes to consider:
 ```text
 employees.department_id
 employees.country_id
+employees.job_title_id
 employees.first_name
 employees.last_name
+job_titles.title
 salary_records.employee_id
 salary_records.effective_date
 ```
 
 The `departments` and `countries` names are unique, because they are matched by
-name in the directory filters and grouped by in reports (§2.3, §2.4).
+name in the directory filters and grouped by in reports (§2.3, §2.4). The
+`job_titles.title` index is not unique: uniqueness is case-insensitive, which is
+a model rule (§2.9), and the index serves the name-to-id lookups of the directory
+and the CSV rows that name a role.
 
 Composite indexes should be added where query patterns demonstrate their value —
 most likely on `salary_records (employee_id, effective_date)`, which serves both
@@ -812,6 +885,12 @@ aggregate USD, EUR, GBP and so on into a single monetary total without an
 explicit conversion strategy. Monetary reports therefore join to the employee to
 resolve the currency, and group or split by it — for example, total payroll by
 country is reported per currency rather than as one combined figure.
+
+The `job_titles` association (§2.9) supports a future title-based report — for
+example "average salary for Software Engineer in USA" — with the same join
+pattern: group through `employees.job_title_id`, apply the currency semantics
+above, and the canonical title rows (§2.9) mean the report cannot split one role
+across spellings. No such report is in scope yet.
 
 ## 12. Testing Structure
 

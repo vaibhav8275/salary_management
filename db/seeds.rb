@@ -76,3 +76,27 @@ COUNTRIES.each do |attributes|
 end
 
 puts "Seeded #{Country.count} countries."
+
+# Job titles — standardized roles an employee belongs to (LLD §2.9). Titles are
+# stored exactly as written below: the model trims and squeezes spaces before
+# saving and refuses a case variant, so seeding one canonical spelling keeps
+# every employee in the same role row.
+
+JOB_TITLES = [
+  "Software Engineer",
+  "Senior Software Engineer",
+  "Lead Software Engineer",
+  "Engineering Manager",
+  "Director of Engineering",
+  "VP of Engineering",
+  "Product Manager",
+  "Sales Representative",
+  "HR Specialist",
+  "Finance Analyst"
+].freeze
+
+JOB_TITLES.each do |title|
+  JobTitle.find_or_create_by!(title: title)
+end
+
+puts "Seeded #{JobTitle.count} job titles."

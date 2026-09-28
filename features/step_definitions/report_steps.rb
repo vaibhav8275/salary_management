@@ -106,13 +106,13 @@ Then(/^the salary trend should report an average of ([0-9.]+) effective from (\d
   row = trend_rows.find { |candidate| candidate[:date] == date }
   raise "expected a trend point for #{date}, got #{api_response_body}" if row.nil?
 
-  expect(row[:amount]).to eq(decimal_amount(amount))
+  expect(decimal_amount(row[:amount])).to eq(decimal_amount(amount))
 end
 
 Then(/^the salary trend should report no average of ([0-9.]+) effective from (\d{4}-\d{2}-\d{2})$/) do |amount, date|
   row = trend_rows.find { |candidate| candidate[:date] == date }
   if row
-    expect(row[:amount]).not_to eq(decimal_amount(amount))
+    expect(decimal_amount(row[:amount])).not_to eq(decimal_amount(amount))
   end
 end
 
@@ -197,7 +197,7 @@ module ReportStepHelpers
       raise "expected a #{grouping} row for #{group.inspect} in #{code}, got #{api_response_body}"
     end
 
-    expect(row[:amount]).to eq(decimal_amount(amount))
+    expect(decimal_amount(row[:amount])).to eq(decimal_amount(amount))
   end
 end
 

@@ -12,12 +12,23 @@ require "json"
 #   200 member     → { "data": { ... } }
 #   4xx/5xx        → { "errors": [ { ... } ] }
 module ApiResponseHelpers
+  # In RSpec request specs the response object is the ActionDispatch mock
+  # response. Cucumber's World also exposes the Rack::Test API (post/get set
+  # `last_response`), but its inherited `response` accessor is never populated,
+  # so fall back to `last_response` when the response is nil.
+  def api_response
+    value = response
+    return value unless value.nil?
+
+    respond_to?(:last_response) ? last_response : nil
+  end
+
   def api_response_body
-    response.body
+    api_response.body
   end
 
   def api_status
-    response.status
+    api_response.status
   end
 
   def api_json

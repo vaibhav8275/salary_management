@@ -48,7 +48,7 @@ RSpec.describe SalaryRecord, type: :model do
     # BR-1 — amounts are never negative. The check constraints are the last
     # line of defence; these examples pin the model level messages that
     # SalaryService relies on to return 422 instead of raising.
-    { base_salary: -1, bonus: 0, allowance: 0 }.each do |attribute, value|
+    { base_salary: -1, bonus: -1, allowance: -1 }.each do |attribute, value|
       it "rejects a negative #{attribute}" do
         record = SalaryRecord.new(
           employee: employee,

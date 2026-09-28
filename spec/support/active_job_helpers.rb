@@ -19,9 +19,11 @@ module ActiveJobHelpers
 
   # Accepts either the class or its name. The adapter stores the class, but
   # referring to `SalaryImportJob` by name keeps a spec loadable before the job
-  # exists, which is the point of writing the test first.
+  # exists, which is the point of writing the test first. Payloads are returned
+  # with indifferent access so RSpec and Cucumber can read `args` however they
+  # index the hash.
   def jobs_for(klass)
-    enqueued_jobs.select { |job| job_name(job) == klass.to_s }
+    enqueued_jobs.select { |job| job_name(job) == klass.to_s }.map(&:with_indifferent_access)
   end
 
   def job_name(job)

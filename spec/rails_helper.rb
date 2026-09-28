@@ -90,6 +90,7 @@ RSpec.configure do |config|
   # not, so each one starts from the same state.
   config.before do
     FactoryBot.rewind_sequences
+    ReferenceData.reset!
     reset_job_queues!
     S3TestDouble.reset!
   end

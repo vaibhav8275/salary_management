@@ -43,6 +43,7 @@ RSpec.describe "Database constraints", type: :schema do
       last_name: "Lovelace",
       email: "constraint-probe-#{@probe}@example.com",
       department_id: ReferenceData.department("Engineering").id,
+      job_title_id: ReferenceData.job_title("Software Engineer").id,
       country_id: ReferenceData.country("United Kingdom", "GBP").id,
       hire_date: Date.new(2019, 3, 1)
     }.merge(timestamps).merge(overrides)
@@ -61,7 +62,7 @@ RSpec.describe "Database constraints", type: :schema do
   end
 
   describe "employees" do
-    %i[first_name last_name email department_id country_id hire_date].each do |column|
+    %i[first_name last_name email department_id job_title_id country_id hire_date].each do |column|
       it "rejects a null #{column}" do
         expect { insert_row("employees", valid_employee_row(column => nil)) }
           .to raise_error(ActiveRecord::NotNullViolation)
@@ -82,6 +83,11 @@ RSpec.describe "Database constraints", type: :schema do
 
     it "rejects a department_id that does not exist" do
       expect { insert_row("employees", valid_employee_row(department_id: 0)) }
+        .to raise_error(ActiveRecord::InvalidForeignKey)
+    end
+
+    it "rejects a job_title_id that does not exist" do
+      expect { insert_row("employees", valid_employee_row(job_title_id: 0)) }
         .to raise_error(ActiveRecord::InvalidForeignKey)
     end
 
@@ -137,6 +143,28 @@ RSpec.describe "Database constraints", type: :schema do
 
       expect { insert_row("departments", valid_department_row(name: "Sales")) }
         .to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
+
+  describe "job_titles" do
+    def valid_job_title_row(overrides = {})
+      { title: "Software Engineer" }.merge(timestamps).merge(overrides)
+    end
+
+    it "rejects a null title" do
+      expect { insert_row("job_titles", valid_job_title_row(title: nil)) }
+        .to raise_error(ActiveRecord::NotNullViolation)
+    end
+
+    # There is no database-level unique constraint on job_titles.title because
+    # the uniqueness is case-insensitive and enforced by the model (see
+    # app/models/job_title.rb). The database allows duplicates to be inserted
+    # via raw SQL, but the model validation will prevent saving a duplicate.
+    it "does not reject a duplicate title at the database level" do
+      create(:job_title, title: "Software Engineer")
+
+      expect { insert_row("job_titles", valid_job_title_row) }
+        .not_to raise_error
     end
   end
 

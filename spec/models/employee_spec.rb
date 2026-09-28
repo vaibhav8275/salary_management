@@ -1,12 +1,12 @@
 require "rails_helper"
 
-# LLD §2.1 — employees own the identity attributes. A department and a country
-# are foreign keys into reference data rather than free-text columns, and the
-# employee's salary currency is reached through their country (§2.3), so an
-# employee has no currency of their own to validate.
+# LLD §2.1 — employees own the identity attributes. A department, a job title
+# and a country are foreign keys into reference data rather than free-text
+# columns, and the employee's salary currency is reached through their country
+# (§2.3), so an employee has no currency of their own to validate.
 RSpec.describe Employee, type: :model do
   # `build` rather than `create`: these examples are about validation, so nothing
-  # should reach the database. The factory supplies the department and country.
+  # should reach the database. The factory supplies the department, title and country.
   def employee(overrides = {})
     build(
       :employee,
@@ -15,6 +15,7 @@ RSpec.describe Employee, type: :model do
         last_name: "Lovelace",
         email: "ada@example.com",
         department: ReferenceData.department("Engineering"),
+        job_title: ReferenceData.job_title("Software Engineer"),
         country: ReferenceData.country("United Kingdom", "GBP"),
         hire_date: Date.new(2019, 3, 1)
       }.merge(overrides)
@@ -26,7 +27,7 @@ RSpec.describe Employee, type: :model do
       expect(employee).to be_valid
     end
 
-    %i[first_name last_name email department country hire_date].each do |attribute|
+    %i[first_name last_name email department job_title country hire_date].each do |attribute|
       it "requires #{attribute}" do
         record = employee(attribute => nil)
 
@@ -58,6 +59,12 @@ RSpec.describe Employee, type: :model do
 
     it "belongs to a country" do
       expect(described_class.reflect_on_association(:country)&.macro).to eq(:belongs_to)
+    end
+
+    # LLD §2.9 — every employee sits in a job title, so a title-based report can
+    # group the whole directory by role.
+    it "belongs to a job title" do
+      expect(described_class.reflect_on_association(:job_title)&.macro).to eq(:belongs_to)
     end
 
     # LLD §2.1 / FR-2.1 — salary records hang off the employee, and the

@@ -22,6 +22,12 @@ RSpec.describe "Database indexes", type: :schema do
       expect(index_on("employees", :country_id)).to be_present
     end
 
+    # Job titles are resolved by name when they fill an employee row, so the
+    # foreign key is indexed like department and country (LLD §2.9).
+    it "indexes job_title_id" do
+      expect(index_on("employees", :job_title_id)).to be_present
+    end
+
     # FR-1.3 — search by name.
     it "indexes first_name" do
       expect(index_on("employees", :first_name)).to be_present
@@ -58,6 +64,16 @@ RSpec.describe "Database indexes", type: :schema do
   describe "departments" do
     it "indexes name uniquely" do
       expect(index_on("departments", :name).unique).to be(true)
+    end
+  end
+
+  describe "job_titles" do
+    # LLD §2.9 — titles are looked up by name when they fill an employee row,
+    # so the title is indexed. Uniqueness is a case-insensitive model rule
+    # (no PostgreSQL case-insensitive constraint without an extension), so the
+    # index itself is not unique.
+    it "indexes title for name-to-id lookups" do
+      expect(index_on("job_titles", :title).unique).to be(false)
     end
   end
 
@@ -124,6 +140,14 @@ RSpec.describe "Database indexes", type: :schema do
 
       expect(foreign_key).to be_present
       expect(foreign_key.options[:column]).to eq("country_id")
+    end
+
+    # LLD §2.1, §2.9 — every employee has a job title.
+    it "points employees at job_titles" do
+      foreign_key = connection.foreign_keys("employees").find { |fk| fk.to_table == "job_titles" }
+
+      expect(foreign_key).to be_present
+      expect(foreign_key.options[:column]).to eq("job_title_id")
     end
 
     # LLD §2.3 — a country is paid in one currency.

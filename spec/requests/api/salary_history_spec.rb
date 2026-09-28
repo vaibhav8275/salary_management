@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# FR-2.2 / LLD §10.1 — the salary history is every period, oldest first, and it
+# FR-2.2 / LLD §10.1 — the salary history is every period, newest first, and it
 # is a separate view from the audit history (LLD §7).
 RSpec.describe "GET /api/v1/employees/:id/salary/history", type: :request do
   let(:employee) { create(:employee) }
@@ -18,11 +18,11 @@ RSpec.describe "GET /api/v1/employees/:id/salary/history", type: :request do
     expect(api_data.size).to eq(3)
   end
 
-  it "orders the periods from oldest to newest" do
+  it "orders the periods from newest to oldest" do
     get "/api/v1/employees/#{employee.id}/salary/history"
 
     expect(api_data.map { |row| row["effective_date"] })
-      .to eq(%w[2024-01-01 2025-01-01 2026-01-01])
+      .to eq(%w[2026-01-01 2025-01-01 2024-01-01])
   end
 
   it "includes every amount" do
@@ -34,7 +34,7 @@ RSpec.describe "GET /api/v1/employees/:id/salary/history", type: :request do
   it "returns the amounts" do
     get "/api/v1/employees/#{employee.id}/salary/history"
 
-    expect(BigDecimal(api_data.first["base_salary"].to_s)).to eq(BigDecimal("50000.0"))
+    expect(BigDecimal(api_data.first["base_salary"].to_s)).to eq(BigDecimal("60000.0"))
   end
 
   it "returns an empty history for an employee with no salary" do

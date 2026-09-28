@@ -31,6 +31,7 @@ RSpec.describe "GET /api/v1/employees", type: :request do
       employee = create(:employee,
         first_name: "Ada", last_name: "Lovelace", email: "ada@example.com",
         department: ReferenceData.department("Engineering"),
+        job_title: ReferenceData.job_title("Senior Software Engineer"),
         country: ReferenceData.country("United Kingdom", "GBP"),
         hire_date: Date.new(2019, 3, 1)
       )
@@ -41,6 +42,7 @@ RSpec.describe "GET /api/v1/employees", type: :request do
       expect(entry).to include(
         "email" => "ada@example.com",
         "department" => "Engineering",
+        "job_title" => "Senior Software Engineer",
         "country" => "United Kingdom",
         "hire_date" => "2019-03-01"
       )

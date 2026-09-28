@@ -1,7 +1,12 @@
 class SalaryRecord < ApplicationRecord
   belongs_to :employee
 
-  # LLD §7 — the audit trail records who changed a salary, what changed, and
-  # whether the change was manual or came from a bulk import.
   has_paper_trail
+
+  validates :employee, presence: true
+  validates :effective_date, presence: true
+  validates :base_salary, :bonus, :allowance,
+    numericality: { greater_than_or_equal_to: 0 }
+
+  validates :effective_date, uniqueness: { scope: :employee_id }
 end

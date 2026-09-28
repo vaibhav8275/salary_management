@@ -8,15 +8,16 @@ Feature: Employee directory
   # REQUIREMENTS FR-1.1, FR-1.2
   Scenario: Employee details are shown in the directory
     Given the following employees exist:
-      | first_name | last_name | email             | department | country       | hire_date  |
-      | Ada        | Lovelace  | ada@example.com   | Engineering | United States | 2019-03-01 |
-      | Grace      | Hopper    | grace@example.com | Engineering | United States | 2021-07-15 |
+      | first_name | last_name | email             | department | country       | job_title                   | hire_date  |
+      | Ada        | Lovelace  | ada@example.com   | Engineering | United States | Software Engineer           | 2019-03-01 |
+      | Grace      | Hopper    | grace@example.com | Engineering | United States | Senior Software Engineer    | 2021-07-15 |
     When the HR Manager lists employees
     Then the response should be successful
     And the employee list should contain 2 employees
     And the employee list should include the employee id and name
     And the employee "Ada Lovelace" should have department "Engineering"
     And the employee "Ada Lovelace" should have country "United States"
+    And the employee "Ada Lovelace" should have job title "Software Engineer"
     And the employee "Ada Lovelace" should have hire date "2019-03-01"
     And the employee "Ada Lovelace" should have email "ada@example.com"
 

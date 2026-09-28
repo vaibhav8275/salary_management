@@ -11,25 +11,25 @@ class FakeS3Client
   def initialize(bucket: "salary-management-imports")
     @bucket = bucket
     @objects = {}
+    @content_types = {}
   end
 
   attr_reader :bucket, :objects
 
   def put_object(bucket: nil, key:, body:, content_type: nil, **_options)
-    @objects[key] = {
-      body: body.respond_to?(:read) ? body.read : body.to_s,
-      content_type: content_type
-    }
+    @content_types[key] = content_type
+    @objects[key] = body.respond_to?(:read) ? body.read : body.to_s
     true
   end
 
   def get_object(bucket: nil, key:, **_options)
-    stored = @objects.fetch(key) { raise Aws::S3::Errors::NoSuchKey.new(nil, "NoSuchKey: #{key}") }
+    raise Aws::S3::Errors::NoSuchKey.new(nil, "NoSuchKey: #{key}") unless @objects.key?(key)
 
-    StringIO.new(stored[:body])
+    StringIO.new(@objects[key])
   end
 
   def delete_object(bucket: nil, key:, **_options)
+    @content_types.delete(key)
     @objects.delete(key)
     true
   end
@@ -40,6 +40,7 @@ class FakeS3Client
 
   def reset!
     @objects.clear
+    @content_types.clear
   end
 end
 
@@ -55,8 +56,11 @@ module S3TestDouble
       @client = FakeS3Client.new
     end
 
+    # Live view of the bucket: keys are object keys and values are the stored
+    # body strings, so tests can stage a CSV (contents[key] = csv) and read it
+    # back through the same read path as an API upload.
     def contents
-      client.objects.transform_values { |stored| stored[:body] }
+      client.objects
     end
   end
 

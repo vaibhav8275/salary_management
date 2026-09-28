@@ -26,7 +26,7 @@ self-service, administrator or payroll persona exists yet.
 | ID       | Requirement                                     |
 | -------- | ----------------------------------------------- |
 | FR-1.1   | Display employee information                    |
-| FR-1.2   | Display employee ID, name, department, country and hire date |
+| FR-1.2   | Display employee ID, name, department, job title, country and hire date |
 | FR-1.3   | Search by employee ID or name                   |
 | FR-1.4   | Filter by department and country                |
 | FR-1.5   | Paginate employee results                       |
@@ -173,10 +173,11 @@ definitions, types, constraints and indexes are specified in
 
 | Entity           | Must represent                                                                     |
 | ---------------- | ---------------------------------------------------------------------------------- |
-| **Employee**     | Employee number/ID, name, email, the department and country they belong to, hire date, timestamps |
+| **Employee**     | Employee number/ID, name, email, the department, job title and country they belong to, hire date, timestamps |
 | **Salary record** | The complete compensation state — base salary, bonus, allowance — effective from a given date, denominated in the currency of the employee's country, plus timestamps |
 | **Country**      | A country employees can belong to, and the currency salaries in it are paid in     |
 | **Department**   | A department employees can belong to                                              |
+| **Job title**    | The role an employee holds; one canonical spelling per role                        |
 | **Currency**     | ISO 4217 code, currency name and display symbol                                    |
 | **Import**       | One bulk operation: filename, a reference to the uploaded file, status, record counts, uploading user, start/completion timestamps |
 | **Import error** | A rejected or skipped row: row number, employee, error message and the original row data |
@@ -190,6 +191,9 @@ Relationships:
 - Departments and countries are reference data an employee is placed in, not
   free-text attributes typed per employee, so the directory filters and the
   reports can group by them.
+- A job title is reference data the same way: an employee belongs to one role,
+  stored as a single canonical title, so a role cannot exist under several
+  spellings and split a title-based report.
 - A country has one currency, and an employee's salary currency is that
   currency — the employee does not carry a currency of their own. Countries that
   are paid in the same currency share one currency: Germany and France both use

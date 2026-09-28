@@ -41,6 +41,7 @@ Before do
   # Scenarios are rolled back, so generated values start from the beginning
   # again; the fake bucket and job queues are not transactional.
   FactoryBot.rewind_sequences
+  ReferenceData.reset!
   reset_scenario_state!
   reset_job_queues!
   S3TestDouble.reset!

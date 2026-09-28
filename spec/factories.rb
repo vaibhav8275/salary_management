@@ -22,6 +22,12 @@ FactoryBot.define do
     sequence(:name) { |n| "Department #{n}" }
   end
 
+  # Reference data (LLD §2.9). Like departments, a title is unique
+  # case-insensitively, so a named title is resolved through ReferenceData.
+  factory :job_title do
+    sequence(:title) { |n| "Job Title #{n}" }
+  end
+
   # Reference data (LLD §2.3). The currency is the country's, never the
   # employee's, so this is where a multi-currency example states its currency.
   factory :country do
@@ -42,6 +48,7 @@ FactoryBot.define do
     sequence(:last_name) { |n| "Lastname#{n}" }
     sequence(:email) { |n| "employee#{n}@example.com" }
     department { ReferenceData.department("Engineering") }
+    job_title { ReferenceData.job_title("Software Engineer") }
     country
     hire_date { Date.new(2020, 1, 1) }
 

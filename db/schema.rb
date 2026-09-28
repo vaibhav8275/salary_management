@@ -10,9 +10,37 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_100338) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_021950) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "active_storage_attachments", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "record_type", null: false
+    t.bigint "record_id", null: false
+    t.bigint "blob_id", null: false
+    t.datetime "created_at", null: false
+    t.index ["blob_id"], name: "index_active_storage_attachments_on_blob_id"
+    t.index ["record_type", "record_id", "name", "blob_id"], name: "index_active_storage_attachments_uniqueness", unique: true
+  end
+
+  create_table "active_storage_blobs", force: :cascade do |t|
+    t.string "key", null: false
+    t.string "filename", null: false
+    t.string "content_type"
+    t.text "metadata"
+    t.string "service_name", null: false
+    t.bigint "byte_size", null: false
+    t.string "checksum"
+    t.datetime "created_at", null: false
+    t.index ["key"], name: "index_active_storage_blobs_on_key", unique: true
+  end
+
+  create_table "active_storage_variant_records", force: :cascade do |t|
+    t.bigint "blob_id", null: false
+    t.string "variation_digest", null: false
+    t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
 
   create_table "countries", force: :cascade do |t|
     t.string "name", null: false
@@ -48,11 +76,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_100338) do
     t.date "hire_date", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "job_title_id", null: false
     t.index ["country_id"], name: "index_employees_on_country_id"
     t.index ["department_id"], name: "index_employees_on_department_id"
     t.index ["email"], name: "index_employees_on_email", unique: true
     t.index ["first_name"], name: "index_employees_on_first_name"
+    t.index ["job_title_id"], name: "index_employees_on_job_title_id"
     t.index ["last_name"], name: "index_employees_on_last_name"
+  end
+
+  create_table "job_titles", force: :cascade do |t|
+    t.string "title", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["title"], name: "index_job_titles_on_title"
   end
 
   create_table "salary_import_errors", force: :cascade do |t|
@@ -110,9 +147,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_100338) do
     t.check_constraint "source::text = ANY (ARRAY['manual'::character varying, 'bulk_import'::character varying]::text[])", name: "versions_source_check"
   end
 
+  add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "countries", "currencies"
   add_foreign_key "employees", "countries"
   add_foreign_key "employees", "departments"
+  add_foreign_key "employees", "job_titles"
   add_foreign_key "salary_import_errors", "employees"
   add_foreign_key "salary_import_errors", "salary_imports"
   add_foreign_key "salary_records", "employees"

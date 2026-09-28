@@ -10,21 +10,27 @@
 # countries these steps resolve, and never carry a currency of their own.
 Given("the following employees exist:") do |table|
   table.hashes.each do |row|
-    create(
-      :employee,
+    attributes = {
       first_name: row["first_name"],
       last_name: row["last_name"],
       email: row["email"],
       department: ReferenceData.department(row["department"]),
       country: ReferenceData.country(row["country"], row["currency"]),
       hire_date: parse_date(row["hire_date"])
-    )
+    }
+    # The job title column is optional: a table without it still leaves every
+    # employee in the factory's default title row (LLD §2.9).
+    attributes[:job_title] = ReferenceData.job_title(row["job_title"]) if row["job_title"].present?
+
+    create(:employee, attributes)
   end
 end
 
 Given('an employee {string} exists with currency {string}') do |name, code|
   first, last = name.split(/\s+/, 2)
-  create(:employee, first_name: first, last_name: last, country: ReferenceData.country_paid_in(code))
+  create(:employee, first_name: first, last_name: last,
+        email: "#{first.downcase}@example.com",
+        country: ReferenceData.country_paid_in(code))
 end
 
 Given('an employee {string} exists with department {string} and country {string}') do |name, department, country|
@@ -33,6 +39,7 @@ Given('an employee {string} exists with department {string} and country {string}
     :employee,
     first_name: first,
     last_name: last,
+    email: "#{first.downcase}@example.com",
     department: ReferenceData.department(department),
     country: ReferenceData.country(country)
   )
@@ -46,11 +53,13 @@ end
 
 # Built with insert_all so the 10,000 employee scenario stays fast. The unique
 # email index is satisfied by construction, and the reference rows are resolved
-# once and passed as ids.
+# once and passed as ids. Every row needs a job title too (the column is NOT
+# NULL), so the whole bulk sits in the same resolved title row.
 Given('{int} employees exist in department {string}') do |count, department|
   now = Time.current
   department_id = ReferenceData.department(department).id
   country_id = ReferenceData.country("United States").id
+  job_title_id = ReferenceData.job_title("Software Engineer").id
   rows = count.times.map do |index|
     {
       first_name: "Bulk",
@@ -58,6 +67,7 @@ Given('{int} employees exist in department {string}') do |count, department|
       email: "bulk#{index}@example.com",
       department_id: department_id,
       country_id: country_id,
+      job_title_id: job_title_id,
       hire_date: Date.new(2020, 1, 1),
       created_at: now,
       updated_at: now
@@ -108,8 +118,10 @@ Then(/^the employee list should contain (\d+) employees?$/) do |count|
 end
 
 Then("the employee list should include the employee id and name") do
-  expect(employee_payloads).to all(include("id", "first_name", "last_name"))
-  expect(employee_payloads.map { |row| row["id"] }).to all(be_a(Integer))
+  employee_payloads.each do |row|
+    expect(row).to include("id", "first_name", "last_name")
+    expect(row["id"]).to be_a(Integer)
+  end
 end
 
 Then('the employee {string} should be in the employee list') do |name|
@@ -126,6 +138,10 @@ end
 
 Then('the employee {string} should have country {string}') do |name, country|
   expect(employee_attribute(name, "country")).to eq(country)
+end
+
+Then('the employee {string} should have job title {string}') do |name, title|
+  expect(employee_attribute(name, "job_title")).to eq(title)
 end
 
 Then('the employee {string} should have hire date {string}') do |name, hire_date|

@@ -1,6 +1,4 @@
 class SalaryImport < ApplicationRecord
-  # LLD §8.2 — status is persisted as a Rails enum backed by an integer column.
-  # The stored values are part of the schema; do not renumber them.
   enum :status, {
     pending: 0,
     processing: 1,

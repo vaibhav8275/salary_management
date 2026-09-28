@@ -66,6 +66,17 @@ end
 
 When("the HR Manager views the salary history of {string}") do |name|
   get "/api/v1/employees/#{employee_named(name).id}/salary/history"
+  # A later request (e.g. the audit view in the BR-3 scenario) would overwrite
+  # the last response, so the history payload is kept against the view.
+  @salary_history_response = api_response
+end
+
+def salary_history_data
+  if @salary_history_response
+    JSON.parse(@salary_history_response.body)["data"]
+  else
+    api_data
+  end
 end
 
 When("the HR Manager creates a salary for {string} with:") do |name, table|
@@ -99,11 +110,11 @@ Then(/^the employee "([^"]*)" should have exactly (\d+) salary records?$/) do |n
 end
 
 Then(/^the salary history should contain (\d+) records?$/) do |count|
-  expect(api_data.size).to eq(count.to_i)
+  expect(salary_history_data.size).to eq(count.to_i)
 end
 
 Then("the salary history should be ordered by effective date descending") do
-  dates = api_data.map { |row| Date.iso8601(row["effective_date"].to_s) }
+  dates = salary_history_data.map { |row| Date.iso8601(row["effective_date"].to_s) }
   expect(dates).to eq(dates.sort.reverse)
 end
 

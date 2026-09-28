@@ -13,6 +13,24 @@
 #
 # `db/seeds.rb` is not loaded into the test database, so the names and symbols are
 # the same values the seeds use.
+#
+# Performance / deadlock note
+# ---------------------------
+# `find_or_create_by!` is not atomic: it does SELECT then INSERT as two
+# separate statements. When a test creates many employees in a loop (e.g. the
+# FR-1.7 scale example that builds 10,000 rows), every iteration calls
+# `ReferenceData.department("Engineering")` and hits the same unique-index
+# entry. Under concurrent or rapid sequential lock pressure PostgreSQL can
+# detect a deadlock and abort one of the transactions.
+#
+# The fix is an in-process, per-test cache keyed by (model, identifier).
+# Within one example the first call goes to the database and every subsequent
+# call returns the already-resolved AR object instantly, so `find_or_create_by!`
+# is called at most once per name per example instead of N times.
+#
+# `reset!` is called in the `before` hook (rails_helper.rb / hooks.rb) so that
+# the cache does not bleed across examples.  The database rows are rolled back by
+# transactional fixtures; the Ruby-side cache just needs to be cleared to match.
 module ReferenceData
   CURRENCIES = {
     "USD" => [ "US Dollar", "$" ],
@@ -44,14 +62,21 @@ module ReferenceData
 
   DEFAULT_CURRENCY = "USD"
 
-  def self.currency(code)
-    Currency.find_by(code: code) || create_currency(code)
+  # Clears the in-process cache.  Call this in the before hook for every
+  # example / scenario so rows from a previous (rolled-back) transaction are
+  # not returned after the next transaction begins.
+  def self.reset!
+    @cache = {}
   end
 
-  def self.create_currency(code)
-    name, symbol = CURRENCIES.fetch(code) { [ "Test Currency #{code}", code ] }
+  def self.cache
+    @cache ||= {}
+  end
 
-    FactoryBot.create(:currency, code: code, name: name, symbol: symbol)
+  def self.currency(code)
+    cache[[ :currency, code ]] ||= Currency.find_or_create_by!(code: code) do |currency|
+      currency.name, currency.symbol = CURRENCIES.fetch(code) { [ "Test Currency #{code}", code ] }
+    end
   end
 
   # A country keeps the currency it was first created with (LLD §2.3, §2.8): the
@@ -59,12 +84,19 @@ module ReferenceData
   # returns the first one rather than quietly changing the salaries of every
   # employee already in that country. Pass a code to override the documented one.
   def self.country(name, currency_code = nil)
-    Country.find_by(name: name) ||
-      FactoryBot.create(:country, name: name, currency: currency(currency_code || COUNTRY_CURRENCIES.fetch(name, DEFAULT_CURRENCY)))
+    cache[[ :country, name ]] ||= Country.find_or_create_by!(name: name) do |country|
+      country.currency = currency(currency_code || COUNTRY_CURRENCIES.fetch(name, DEFAULT_CURRENCY))
+    end
   end
 
   def self.department(name)
-    Department.find_by(name: name) || FactoryBot.create(:department, name: name)
+    cache[[ :department, name ]] ||= Department.find_or_create_by!(name: name)
+  end
+
+  # A title is unique case-insensitively (LLD §2.9), so the canonical spelling
+  # is looked up before a row is created.
+  def self.job_title(title)
+    cache[[ :job_title, title ]] ||= JobTitle.find_or_create_by!(title: title)
   end
 
   # A country that is paid in the given currency, for the steps that state a

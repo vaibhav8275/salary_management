@@ -28,8 +28,17 @@ module AuditHelpers
   # create version records no changes, so it contributes nothing. Decimals are
   # normalised with BigDecimal#to_s("F") because the JSON round trip can produce
   # either "60000.0" or "0.6e5" depending on the magnitude.
-  def version_amounts(record, attribute)
-    versions_for(record).filter_map do |version|
+  #
+  # Accepts either a record (whose versions are looked up) or a pre-resolved
+  # versions collection, so both RSpec examples and Cucumber steps share it.
+  def version_amounts(record_or_versions, attribute = "base_salary")
+    versions = if record_or_versions.is_a?(ActiveRecord::Relation)
+      record_or_versions
+    else
+      versions_for(record_or_versions)
+    end
+
+    versions.filter_map do |version|
       changes = version.object_changes&.dig(attribute)
       next if changes.nil?
 

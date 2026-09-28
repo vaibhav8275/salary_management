@@ -21,7 +21,9 @@ Then(/^the audit history for "([^"]*)" should not contain a change to ([0-9.]+)$
 end
 
 Then("the audit history should include a change to {float}") do |amount|
-  expect(version_amounts(versions_for_audited_employee)).to include(BigDecimal(amount.to_s))
+  # version_amounts normalises amounts to their JSON-numeric string form (e.g.
+  # "60000.0"), so the expected figure is normalised the same way.
+  expect(version_amounts(versions_for_audited_employee)).to include(BigDecimal(amount.to_s).to_s("F"))
 end
 
 Then(/^the audit history should report the change from ([0-9.]+) to ([0-9.]+)$/) do |from, to|
