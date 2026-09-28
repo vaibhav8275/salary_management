@@ -15,6 +15,8 @@
 default: &default
   adapter: postgresql
   encoding: unicode
+  username: admin
+  password: admin
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
@@ -79,8 +81,6 @@ test:
 # environment variables. The variable name is formed by concatenating the
 # connection name with `_DATABASE_URL`. For example:
 #
-#   CACHE_DATABASE_URL="postgres://cacheuser:cachepass@localhost/cachedatabase"
-#
 # Read https://guides.rubyonrails.org/configuring.html#configuring-a-database
 # for a full overview on how database connection configuration can be specified.
 #
@@ -90,15 +90,3 @@ production:
     database: salary_management_production
     username: salary_management
     password: <%= ENV["SALARY_MANAGEMENT_DATABASE_PASSWORD"] %>
-  cache:
-    <<: *primary_production
-    database: salary_management_production_cache
-    migrations_paths: db/cache_migrate
-  queue:
-    <<: *primary_production
-    database: salary_management_production_queue
-    migrations_paths: db/queue_migrate
-  cable:
-    <<: *primary_production
-    database: salary_management_production_cable
-    migrations_paths: db/cable_migrate

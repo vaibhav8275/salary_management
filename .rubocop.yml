@@ -1,6 +1,12 @@
 # Omakase Ruby styling for Rails
 inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 
+# Written by `rails generate cucumber:install` and overwritten on regeneration,
+# so it is not ours to restyle.
+AllCops:
+  Exclude:
+    - "lib/tasks/cucumber.rake"
+
 # Overwrite or add rules to create your own house style
 #
 # # Use `[a, [b, c]]` not `[ a, [ b, c ] ]`

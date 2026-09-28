@@ -1,16 +1,22 @@
 # Be sure to restart your server when you modify this file.
 
-# Avoid CORS issues when API is called from the frontend app.
-# Handle Cross-Origin Resource Sharing (CORS) in order to accept cross-origin Ajax requests.
-
-# Read more: https://github.com/cyu/rack-cors
-
-# Rails.application.config.middleware.insert_before 0, Rack::Cors do
-#   allow do
-#     origins "example.com"
+# Handle Cross-Origin Resource Sharing (CORS) so the separate Next.js frontend
+# can call this API (ARCHITECTURE §1, LLD §9).
 #
-#     resource "*",
-#       headers: :any,
-#       methods: [:get, :post, :put, :patch, :delete, :options, :head]
-#   end
-# end
+# In development the frontend runs on a different port, so localhost origins are
+# allowed. In production only the deployed frontend origin is allowed — set
+# FRONTEND_ORIGIN, which fails closed rather than defaulting to "*".
+
+frontend_origin = ENV.fetch("FRONTEND_ORIGIN", "http://localhost:3000")
+
+Rails.application.config.middleware.insert_before 0, Rack::Cors do
+  allow do
+    origins(*frontend_origin.split(",").map(&:strip))
+
+    resource "*",
+      headers: :any,
+      methods: [ :get, :post, :put, :patch, :delete, :options, :head ],
+      expose: [ "Content-Disposition" ],
+      max_age: 600
+  end
+end

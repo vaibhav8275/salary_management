@@ -28,6 +28,11 @@ module SalaryManagement
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
+    # Sidekiq is the only queue backend (ARCHITECTURE §4.3); bulk salary imports
+    # are enqueued, never processed in-request. The test environment overrides
+    # this with the :test adapter so the suite does not need a running Redis.
+    config.active_job.queue_adapter = :sidekiq
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files

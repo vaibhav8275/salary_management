@@ -15,10 +15,21 @@ gem "puma", ">= 5.0"
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 
-# Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
-gem "solid_cache"
-gem "solid_queue"
-gem "solid_cable"
+# Use Rack CORS for handling Cross-Origin Resource Sharing (CORS), making cross-origin Ajax possible
+gem "rack-cors"
+
+# Audit trail for salary record changes (LLD §7)
+gem "paper_trail", "~> 17.0"
+
+# Background processing for bulk salary imports (LLD §8)
+gem "sidekiq", "~> 8.1"
+
+# Required by Rails' :redis_cache_store, which is the cache store in production.
+# Sidekiq talks to Redis through redis-client instead, so this is a separate gem.
+gem "redis", ">= 4.0.1"
+
+# S3 storage for uploaded CSV files (ARCHITECTURE §4.5)
+gem "aws-sdk-s3", require: false
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
@@ -32,9 +43,6 @@ gem "thruster", require: false
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
 gem "image_processing", "~> 1.2"
 
-# Use Rack CORS for handling Cross-Origin Resource Sharing (CORS), making cross-origin Ajax possible
-# gem "rack-cors"
-
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
@@ -47,6 +55,10 @@ group :development, :test do
 
   # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
   gem "rubocop-rails-omakase", require: false
+
+  # End-to-end / BDD feature specs (REQUIREMENTS §5, LLD §12)
+  gem "cucumber-rails", require: false
+  gem "database_cleaner-active_record", require: false
 end
 
 gem "rspec-rails", "~> 8.0"
