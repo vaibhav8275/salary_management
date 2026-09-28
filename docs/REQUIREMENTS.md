@@ -38,7 +38,8 @@ The directory must operate efficiently against approximately 10,000 employees
 ### 3.2 Salary record management
 
 Salary information for an employee consists of base salary, bonus, allowance and
-effective date, denominated in the currency recorded against the employee.
+effective date, denominated in the currency of the country the employee belongs
+to.
 
 | ID       | Requirement                                              |
 | -------- | -------------------------------------------------------- |
@@ -158,7 +159,9 @@ implementation.
 | FR-7.5   | Employee counts by department and country             | Department, country               |
 
 **BR-8 — Currency is always explicit.** Every salary and every report states its
-currency. External foreign-exchange conversion is not included initially, and
+currency. A salary is denominated in the currency of the employee's country, so a
+country determines exactly one currency and an employee never has a currency of
+their own. External foreign-exchange conversion is not included initially, and
 salaries in different currencies must not be combined into a misleading single
 monetary value without an explicit conversion strategy.
 
@@ -170,8 +173,10 @@ definitions, types, constraints and indexes are specified in
 
 | Entity           | Must represent                                                                     |
 | ---------------- | ---------------------------------------------------------------------------------- |
-| **Employee**     | Employee number/ID, name, email, department, country, hire date, the currency their salary is paid in, timestamps |
-| **Salary record** | The complete compensation state — base salary, bonus, allowance — effective from a given date, denominated in the employee's currency, plus timestamps |
+| **Employee**     | Employee number/ID, name, email, the department and country they belong to, hire date, timestamps |
+| **Salary record** | The complete compensation state — base salary, bonus, allowance — effective from a given date, denominated in the currency of the employee's country, plus timestamps |
+| **Country**      | A country employees can belong to, and the currency salaries in it are paid in     |
+| **Department**   | A department employees can belong to                                              |
 | **Currency**     | ISO 4217 code, currency name and display symbol                                    |
 | **Import**       | One bulk operation: filename, a reference to the uploaded file, status, record counts, uploading user, start/completion timestamps |
 | **Import error** | A rejected or skipped row: row number, employee, error message and the original row data |
@@ -182,6 +187,13 @@ Relationships:
 - An employee has many salary records, so that salary history is preserved
   rather than overwritten.
 - A salary record is a salary state effective from a particular date.
+- Departments and countries are reference data an employee is placed in, not
+  free-text attributes typed per employee, so the directory filters and the
+  reports can group by them.
+- A country has one currency, and an employee's salary currency is that
+  currency — the employee does not carry a currency of their own. Countries that
+  are paid in the same currency share one currency: Germany and France both use
+  the euro.
 - An import record represents a bulk operation, and owns the uploaded file that
   operation processes.
 - Import provenance does not belong on individual salary records: a record may
@@ -196,6 +208,10 @@ Relationships:
 - The target dataset is approximately 10,000 employees.
 - Employee search, filtering and pagination must remain efficient at that scale.
 - Large CSV imports must not block the request that uploaded them.
+- Reference data — the valid currencies, countries and departments — is small,
+  changes rarely, and is needed on nearly every screen. It must be available
+  without being re-read from the database on each request, while PostgreSQL
+  remains the authoritative copy.
 
 **Technology**
 
@@ -205,7 +221,9 @@ The implementation must use:
   RuboCop, Brakeman, `rack-cors`.
 - Frontend: Next.js, TypeScript, and a component library.
 - Deployment: containerized application on AWS EKS with automated CI/CD, using
-  S3, EKS, EC2 and RDS. Uploaded CSV/Excel files are stored in AWS S3.
+  S3, EKS, EC2 and RDS. Uploaded CSV/Excel files are stored in AWS S3. Redis
+  holds the Sidekiq job queues and the reference data cache; it introduces no
+  service that is not already required.
 - Structure: a monolith. Microservices and distributed architecture are
   deliberately avoided because the stated requirement and dataset size do not
   justify their complexity.
@@ -227,6 +245,11 @@ The reasoning behind these choices is recorded in
   by name are both expected to be fast.
 - Compensation is expressed as base salary plus bonus plus allowance, per
   currency, per effective period.
+- A country is paid in exactly one currency and departments and countries are
+  maintained as small reference tables rather than typed per employee, so
+  employees are placed in existing rows. An employee's salary currency follows
+  from their country; an employee relocating to a country paid in another
+  currency is a deliberate change, not a per-record currency override.
 - A correction to history is a legitimate HR activity and must be supported
   without destroying the record of the earlier value.
 - Old Excel/CSV exports are a realistic failure mode, so stale-import protection

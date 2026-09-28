@@ -15,7 +15,9 @@ Employee
   │
   ├── has_many :salary_records
   │
-  └── belongs_to :currency
+  ├── belongs_to :department
+  ├── belongs_to :country
+  └── has_one :currency, through: :country
 
 SalaryRecord
   │
@@ -27,10 +29,26 @@ SalaryImport
   ├── has_many :salary_import_errors
   └── tracks one bulk import operation
 
+Country
+  │
+  ├── belongs_to :currency  (the currency salaries in this country are paid in)
+  └── has_many :employees
+
+Department
+  │
+  └── has_many :employees
+
 Currency
   │
-  └── referenced by employees (authoritative source of an employee's currency)
+  └── referenced by countries (authoritative source of a salary's currency)
 ```
+
+`department` and `country` are reference tables rather than free-text columns, and
+a currency belongs to a **country**, not to an employee. An employee's salary
+currency is therefore reached as `employee.country.currency`: the path is fixed by
+the data model, so an employee cannot be paid in a currency their country does not
+use, and the currency of a salary record cannot drift away from the employee's
+country.
 
 An employee has many salary records so that salary history is preserved rather
 than overwritten:
@@ -47,8 +65,10 @@ Employee E1001
 
 | Entity                | Owns                                                                       |
 | --------------------- | -------------------------------------------------------------------------- |
-| `Employee`            | Who the person is, how to find them, and the currency their salary is paid in |
-| `SalaryRecord`        | The complete compensation state effective from a date, in the employee's currency |
+| `Employee`            | Who the person is and how to find them; placed in a department and a country |
+| `SalaryRecord`        | The complete compensation state effective from a date, in the currency of the employee's country |
+| `Country`             | Where an employee works, and the currency they are paid in                   |
+| `Department`          | Which part of the company an employee belongs to                             |
 | `Currency`            | Valid currency values and their display                                      |
 | `SalaryImport`        | What happened during one bulk operation                                      |
 | `SalaryImportError`   | Why an individual row was rejected or skipped                                |
@@ -63,29 +83,34 @@ id
 first_name
 last_name
 email
-department
-country
+department_id
+country_id
 hire_date
-currency_id
 created_at
 updated_at
 ```
 
-| Field         | Rails type | Null | Notes                              |
-| ------------- | ---------- | ---: | ---------------------------------- |
-| `id`          | `bigint`   |   No | Rails primary key; **serves as the employee number** |
-| `first_name`  | `string`   |   No | Employee first name                |
-| `last_name`   | `string`   |   No | Employee last name                 |
-| `email`       | `string`   |   No | Employee email; add unique index   |
-| `department`  | `string`   |   No | Department name                    |
-| `country`     | `string`   |   No | Country name/code                  |
-| `currency_id` | `bigint`   |   No | FK → `currencies.id`; **authoritative currency for this employee** |
-| `hire_date`   | `date`     |   No | Employee joining date              |
-| `created_at`  | `datetime` |   No | Rails timestamp                    |
-| `updated_at`  | `datetime` |   No | Rails timestamp                    |
+| Field          | Rails type | Null | Notes                              |
+| -------------- | ---------- | ---: | ---------------------------------- |
+| `id`           | `bigint`   |   No | Rails primary key; **serves as the employee number** |
+| `first_name`   | `string`   |   No | Employee first name                |
+| `last_name`    | `string`   |   No | Employee last name                 |
+| `email`        | `string`   |   No | Employee email; add unique index   |
+| `department_id`| `bigint`   |   No | FK → `departments.id`             |
+| `country_id`   | `bigint`   |   No | FK → `countries.id`                |
+| `hire_date`    | `date`     |   No | Employee joining date              |
+| `created_at`   | `datetime` |   No | Rails timestamp                    |
+| `updated_at`   | `datetime` |   No | Rails timestamp                    |
 
 Because `id` is the employee number, employee-number uniqueness is structural —
 no separate uniqueness constraint is required.
+
+**No currency column.** `employees` deliberately has no `currency_id`: a currency
+is an attribute of a country (§2.3), so the employee's currency is
+`employees.country_id → countries.currency_id`. The two things a free-text
+`department`/`country` pair plus a separate `currency_id` got wrong — a
+misspelled department entering the data, and a country whose currency disagreed
+with the employee's — are both structurally impossible this way.
 
 ### 2.2 `currencies`
 
@@ -107,7 +132,77 @@ updated_at
 | `created_at`  | `datetime` |   No | Rails timestamp                            |
 | `updated_at`  | `datetime` |   No | Rails timestamp                            |
 
-### 2.3 `salary_records`
+A currency is referenced by countries (§2.3), not by employees. One currency row
+is shared by every country paid in it — `EUR` is referenced by both Germany and
+France — so `code` is unique across the table while the reference back to
+countries stays many-to-one (§2.3).
+
+### 2.3 `countries`
+
+```text
+id
+name
+currency_id
+created_at
+updated_at
+```
+
+| Field         | Rails type | Null | Notes                                          |
+| ------------- | ---------- | ---: | ---------------------------------------------- |
+| `id`          | `bigint`   |   No | Rails default primary key                      |
+| `name`        | `string`   |   No | Country name — United States, United Kingdom; unique |
+| `currency_id` | `bigint`   |   No | FK → `currencies.id`; **the currency salaries in this country are paid in** |
+| `created_at`  | `datetime` |   No | Rails timestamp                                |
+| `updated_at`  | `datetime` |   No | Rails timestamp                                |
+
+**The country owns the currency.** One row per country, one currency per country:
+an employee's salary currency is whatever their country is paid in, and a country
+has exactly one currency so there is never an ambiguity to resolve at read time.
+
+**The reverse is many-to-one, not one-to-one.** Several countries share a single
+currency row: Germany and France both point at the same `EUR` row — that is the
+case in the seed data — because both are paid in the euro. So one country never
+has two currencies, while one currency is used by as many countries as need it.
+The currency row is never duplicated per country, which is what keeps
+`currencies.code` unique (§2.2) and keeps a "total payroll by country" report
+from emitting the same currency twice. This is why the association is
+`Country belongs_to :currency` together with
+`Currency has_many :countries, dependent: :restrict_with_error` — the
+`has_many` runs from the currency to the countries using it, and says nothing
+about a country having more than one currency.
+
+`name` is unique because it is the key the directory filter and the reporting
+group-by use, and because a country appearing twice under two spellings would
+split a report in two.
+
+Countries are reference data, not an editable field on the employee: adding a
+country is a data change, and the API matches an incoming country by name against
+this table.
+
+### 2.4 `departments`
+
+```text
+id
+name
+created_at
+updated_at
+```
+
+| Field         | Rails type | Null | Notes                                    |
+| ------------- | ---------- | ---: | ---------------------------------------- |
+| `id`          | `bigint`   |   No | Rails default primary key                |
+| `name`        | `string`   |   No | Department name — Engineering, Sales; unique |
+| `created_at`  | `datetime` |   No | Rails timestamp                          |
+| `updated_at`  | `datetime` |   No | Rails timestamp                          |
+
+`name` is unique for the same reason as `countries.name`: the directory filter
+and the "average salary by department" and "total payroll by department" reports
+group by it, and a duplicated or misspelled name would fragment both.
+
+`currencies`, `countries` and `departments` are the three reference tables, and
+all three are cached permanently in Redis — see §2.8.
+
+### 2.5 `salary_records`
 
 ```text
 id
@@ -135,18 +230,20 @@ A `SalaryRecord` represents the **complete** compensation state effective from
 `effective_date` — not an incremental adjustment.
 
 **Currency.** `salary_records` carries no currency column. All amounts on a
-salary record are denominated in the currency of the owning employee, reached
-via `salary_records.employee_id → employees.currency_id`. The employee's currency
-is the single authoritative source; it is not duplicated per record, so it cannot
-drift between an employee and their history.
+salary record are denominated in the currency of the owning employee's country,
+reached via `salary_records.employee_id → employees.country_id →
+countries.currency_id`. The employee's country is the single authoritative
+source; the currency is not duplicated per record, so it cannot drift between an
+employee and their history.
 
 The consequence to keep in mind: an employee's currency applies to their whole
-salary history, including past periods. If historical currency ever needs to
-differ from the employee's current currency — for example an employee who
-relocates — a currency column would have to be added to `salary_records` as a
+salary history, including past periods, and it is a consequence of their country
+rather than an independent choice. If a salary ever needed to be denominated in
+something other than the employee's country currency — a relocation, a
+secondment — a currency column would have to be added to `salary_records` as a
 deliberate, later change rather than introduced implicitly.
 
-### 2.4 `salary_imports`
+### 2.6 `salary_imports`
 
 ```text
 id
@@ -186,7 +283,7 @@ the worker stay decoupled: the job is handed only the import id and reads the ke
 from the database it already has to write to. The object is not retained beyond
 processing in the initial implementation.
 
-### 2.5 `salary_import_errors`
+### 2.7 `salary_import_errors`
 
 ```text
 id
@@ -211,13 +308,60 @@ created_at
 Storing the original row makes a rejected import explainable to the HR Manager
 without re-uploading the file.
 
+### 2.8 Reference data cache
+
+`currencies` (§2.2), `countries` (§2.3) and `departments` (§2.4) are the three
+reference tables. Each holds tens of rows, is written almost never — the seeds or
+an occasional administrative correction — and is read on nearly every request:
+the employee directory renders a department and a country per row, salary detail
+renders a currency, and every report groups by one or more of them.
+
+That asymmetry is the whole justification for caching them permanently in Redis.
+Resolving the same three tables through PostgreSQL means a join per row, or a
+lookup map assembled per request; with the cache, a whole page of employees is
+rendered from one Redis round trip.
+
+Layout — one key per table, each holding a JSON array of row objects:
+
+```text
+reference_data:currencies   → [ { "id": 1, "code": "USD", "name": "US Dollar", "symbol": "$" }, … ]
+reference_data:countries    → [ { "id": 1, "name": "United States", "currency": { "id": 1, "code": "USD", … } }, … ]
+reference_data:departments → [ { "id": 1, "name": "Engineering" }, … ]
+```
+
+A country embeds its currency, so the `employee → country → currency` path
+(§2.1, §2.3) resolves from a single cached value rather than a second lookup.
+
+Four rules make the cache safe to keep permanently:
+
+- **No expiry.** The keys are written without a TTL. These rows are not volatile
+  data, so an expiring cache would buy nothing and would only reintroduce
+  database reads.
+- **Explicit invalidation.** Only a write path reloads the cache — the seeds, or
+  an administrative change to a reference row — through a single reload that
+  rewrites all three keys together. There is no partial invalidation to reason
+  about because the three tables always move as a set.
+- **The cache is an optimisation, never a dependency.** A miss, or a Redis that is
+  unreachable, falls back to PostgreSQL and repopulates. A request must not fail
+  because the cache is cold or Redis is down.
+- **PostgreSQL stays authoritative.** Redis holds a copy for reads; reference
+  data is never written to Redis directly.
+
+Populated by `ReferenceData.reload!`; read through `ReferenceData.countries`,
+`ReferenceData.departments` and `ReferenceData.currencies`, with the
+name-to-id lookups the directory filters and CSV import need. The deployment
+topology and the reasoning behind it are in
+[`ARCHITECTURE.md`](ARCHITECTURE.md) §4.6 and §7.2.
+
 ## 3. Data Integrity
 
 Use database constraints where practical; application validations provide the
 friendly errors.
 
 ```text
-employees.currency_id          → FOREIGN KEY → currencies.id
+employees.country_id          → FOREIGN KEY → countries.id
+employees.department_id       → FOREIGN KEY → departments.id
+countries.currency_id         → FOREIGN KEY → currencies.id
 salary_records.employee_id     → FOREIGN KEY → employees.id
 salary_records.base_salary     → non-negative, required
 salary_records.bonus           → non-negative, required
@@ -225,30 +369,39 @@ salary_records.allowance       → non-negative, required
 salary_records.effective_date  → required
 ```
 
-Currency validity is enforced once, on the employee. Because salary records
-inherit currency through the employee foreign key, no separate currency
+Currency validity is enforced once, on the country. Because salary records
+inherit currency through the employee and its country, no separate currency
 constraint is needed on `salary_records`.
 
 ```text
 UNIQUE (employee_id, effective_date)
+UNIQUE (currencies.code)
+UNIQUE (countries.name)
+UNIQUE (departments.name)
 ```
 
-This prevents one employee from accidentally holding two salary records for the
-same effective period — which is what makes the "one record per period" rule in
-§5 enforceable rather than merely conventional.
+The unique employee/effective-date pair prevents one employee from accidentally
+holding two salary records for the same effective period — which is what makes
+the "one record per period" rule in §5 enforceable rather than merely
+conventional. The unique reference-data names prevent the same department or
+country existing twice under one name, which would split a report in two (§2.3,
+§2.4).
 
 ## 4. Indexes
 
 Initial indexes to consider:
 
 ```text
-employees.department
-employees.country
+employees.department_id
+employees.country_id
 employees.first_name
 employees.last_name
 salary_records.employee_id
 salary_records.effective_date
 ```
+
+The `departments` and `countries` names are unique, because they are matched by
+name in the directory filters and grouped by in reports (§2.3, §2.4).
 
 Composite indexes should be added where query patterns demonstrate their value —
 most likely on `salary_records (employee_id, effective_date)`, which serves both
@@ -607,18 +760,18 @@ implementation.
 ### 10.1 Employees and salary
 
 ```text
-GET   /api/employees
-GET   /api/employees/:id
-GET   /api/employees/:id/salary
-GET   /api/employees/:id/salary/history
-PATCH /api/employees/:id/salary/:salary_record_id
+GET   /api/v1/employees
+GET   /api/v1/employees/:id
+GET   /api/v1/employees/:id/salary
+GET   /api/v1/employees/:id/salary/history
+PATCH /api/v1/employees/:id/salary/:salary_record_id
 ```
 
 ### 10.2 Audit
 
 ```text
-GET  /api/employees/:id/salary/audit
-POST /api/salary-records/:id/revert
+GET  /api/v1/employees/:id/salary/audit
+POST /api/v1/salary-records/:id/revert
 ```
 
 The audit API exposes what the HR UI needs without leaking internal database
@@ -627,15 +780,15 @@ structure. The revert endpoint may be refined during API contract design.
 ### 10.3 Bulk import
 
 ```text
-POST /api/salary-imports
-GET  /api/salary-imports
-GET  /api/salary-imports/:id
+POST /api/v1/salary-imports
+GET  /api/v1/salary-imports
+GET  /api/v1/salary-imports/:id
 ```
 
 The frontend polls import status initially. A WebSocket/SSE progress mechanism
 is not required for the initial implementation.
 
-`POST /api/salary-imports` returns the import id, not a processing result: it
+`POST /api/v1/salary-imports` returns the import id, not a processing result: it
 creates the import, uploads the CSV to S3 and enqueues the job (§8.1). The
 uploaded file is referenced by `s3_object_key` and is not exposed to the client.
 

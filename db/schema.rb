@@ -14,6 +14,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_100338) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
+  create_table "countries", force: :cascade do |t|
+    t.string "name", null: false
+    t.bigint "currency_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["currency_id"], name: "index_countries_on_currency_id"
+    t.index ["name"], name: "index_countries_on_name", unique: true
+  end
+
   create_table "currencies", force: :cascade do |t|
     t.string "code", limit: 3, null: false
     t.string "name", null: false
@@ -23,19 +32,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_100338) do
     t.index ["code"], name: "index_currencies_on_code", unique: true
   end
 
+  create_table "departments", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["name"], name: "index_departments_on_name", unique: true
+  end
+
   create_table "employees", force: :cascade do |t|
     t.string "first_name", null: false
     t.string "last_name", null: false
     t.string "email", null: false
-    t.string "department", null: false
-    t.string "country", null: false
+    t.bigint "department_id", null: false
+    t.bigint "country_id", null: false
     t.date "hire_date", null: false
-    t.bigint "currency_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["country"], name: "index_employees_on_country"
-    t.index ["currency_id"], name: "index_employees_on_currency_id"
-    t.index ["department"], name: "index_employees_on_department"
+    t.index ["country_id"], name: "index_employees_on_country_id"
+    t.index ["department_id"], name: "index_employees_on_department_id"
     t.index ["email"], name: "index_employees_on_email", unique: true
     t.index ["first_name"], name: "index_employees_on_first_name"
     t.index ["last_name"], name: "index_employees_on_last_name"
@@ -96,7 +110,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_100338) do
     t.check_constraint "source::text = ANY (ARRAY['manual'::character varying, 'bulk_import'::character varying]::text[])", name: "versions_source_check"
   end
 
-  add_foreign_key "employees", "currencies"
+  add_foreign_key "countries", "currencies"
+  add_foreign_key "employees", "countries"
+  add_foreign_key "employees", "departments"
   add_foreign_key "salary_import_errors", "employees"
   add_foreign_key "salary_import_errors", "salary_imports"
   add_foreign_key "salary_records", "employees"

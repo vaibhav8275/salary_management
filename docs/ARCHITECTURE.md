@@ -43,7 +43,13 @@ requirement demands it.
               ┌─────────────┐   ┌─────────────┐
               │ PostgreSQL  │   │   Sidekiq   │
               │             │   │   Workers   │
-              └─────────────┘   └──────┬──────┘
+              └──────┬──────┘   └──────┬──────┘
+                     │                 │
+        reference    │                 │  background jobs
+        data cache   ▼                 ▼
+              ┌──────────────────────────────────┐
+              │            Redis                │
+              └──────────────────────────────────┘
                                        │
                                        ▼
                               Bulk Salary Processing
@@ -175,7 +181,51 @@ re-enqueued without re-uploading anything, and the API and worker need no shared
 state beyond the database they already both use.
 
 The original file is not retained beyond processing in the initial
-implementation. Field-level detail is in [`LLD.md`](LLD.md) §2.4.
+implementation. Field-level detail is in [`LLD.md`](LLD.md) §2.6.
+
+### 4.6 Reference data cache — Redis
+
+Three tables — `currencies`, `countries` and `departments` — are read on nearly
+every request and written almost never. They are reference data: valid currency
+values, the countries salaries may be paid in, and the departments that exist.
+Every employee row needs a department name and a country name, and every salary
+needs the currency of the employee's country.
+
+That makes them the one part of the data set worth keeping permanently in Redis
+rather than re-reading from PostgreSQL:
+
+```text
+employees.country_id  ─┐
+employees.department_id ─┤
+                        ▼
+              ┌─────────────────┐        miss
+              │     Redis       │ ─────────────────► PostgreSQL
+              │ reference_data: │ ◄─────────────────  read + repopulate
+              │ countries       │
+              │ departments     │
+              │ currencies      │
+              └─────────────────┘
+```
+
+**Why this shape.** A single cached value resolves the whole
+`employee → country → currency` path, because a country embeds its currency. A
+page of 25 employees therefore renders from one Redis round trip instead of a
+join per row or a lookup map assembled per request.
+
+**Why it is permanent.** These rows are not volatile: they change when reference
+data is added, not as a side effect of using the system. An expiring cache would
+reintroduce the database reads it exists to avoid. The cache is instead reloaded
+explicitly by the write path, and **a read that misses, or a Redis that is
+unreachable, falls back to PostgreSQL** — the cache is an optimisation and must
+never be the reason a request fails. PostgreSQL remains the single system of
+record; Redis holds a copy for reads only.
+
+**No new infrastructure.** Redis is already required by Sidekiq, so this adds no
+new stateful service to the deployment; it is a second use of one that is
+already there.
+
+The cache layout, invalidation rules and read/write entry points are in
+[`LLD.md`](LLD.md) §2.8.
 
 ## 5. Key Flows
 
@@ -186,7 +236,7 @@ HR Manager
     ↓
 Next.js
     ↓
-PATCH /api/employees/:id/salary
+PATCH /api/v1/employees/:id/salary
     ↓
 Rails Controller
     ↓
@@ -243,6 +293,7 @@ the left, it is probably in the wrong place.
 | Background processing          | Sidekiq               |
 | Salary business data           | `SalaryRecord`        |
 | Failed rows                    | `SalaryImportError`   |
+| Valid currencies, countries, departments | PostgreSQL, cached in Redis (§4.6) |
 | Who/what changed a salary      | PaperTrail            |
 | Which import caused a change   | PaperTrail metadata   |
 
@@ -286,6 +337,9 @@ The primary strategies for the 10,000-employee dataset are:
 - Server-side filtering and search
 - Database-level aggregation for reports
 - Asynchronous, batched CSV processing
+- A permanent Redis cache for the small reference tables — currencies, countries
+  and departments — so the names and currency each employee row needs are not
+  read from PostgreSQL on every request (see §4.6)
 - Never loading all employees into application memory
 
 Concrete indexes, batch size and the performance validation plan are in
@@ -332,13 +386,15 @@ Container Registry
 AWS EKS
    ├── Next.js
    └── Rails API
-        └── Sidekiq
-              ↓
-          PostgreSQL
+        ├── Sidekiq
+        └── Redis ──► PostgreSQL
 ```
 
 The Rails API and Sidekiq share an image; the process role is what differs.
-Uploaded files are held in S3. AWS services used: S3, EKS, EC2 and RDS.
+Uploaded files are held in S3. Redis is the shared state of the two Rails
+processes: Sidekiq's job queues and the reference data cache (§4.6) — one
+stateful service, not two. AWS services used: S3, EKS, EC2, RDS and ElastiCache
+(or an equivalent managed Redis).
 
 The exact networking, secrets management, ingress and scaling configuration are
 deployment implementation details, not architectural commitments.

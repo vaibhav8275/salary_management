@@ -23,7 +23,12 @@ require 'rspec/rails'
 # directory. Alternatively, in the individual `*_spec.rb` files, manually
 # require only the support files necessary.
 #
-# Rails.root.glob('spec/support/**/*.rb').sort_by(&:to_s).each { |f| require f }
+require_relative 'support/factory_bot'
+require_relative 'support/csv_helpers'
+require_relative 'support/api_response_helpers'
+require_relative 'support/audit_helpers'
+require_relative 'support/active_job_helpers'
+require_relative 'support/s3_fake'
 
 # Ensures that the test database schema matches the current schema file.
 # If there are pending migrations it will invoke `db:test:prepare` to
@@ -69,4 +74,28 @@ RSpec.configure do |config|
   config.filter_rails_from_backtrace!
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
+
+  # Test data comes from FactoryBot (`spec/factories.rb`); the remaining modules
+  # are the readers and doubles around it. RSpec and Cucumber share them, so both
+  # suites describe the same fixtures and read the API the same way.
+  config.include FactoryBot::Syntax::Methods
+  config.include CsvHelpers
+  config.include ApiResponseHelpers
+  config.include AuditHelpers
+  config.include ActiveJobHelpers
+  config.include S3TestDouble
+
+  # Sequences are rewound and the job queues and fake bucket are reset before
+  # every example: database rows are rolled back between examples while these are
+  # not, so each one starts from the same state.
+  config.before do
+    FactoryBot.rewind_sequences
+    reset_job_queues!
+    S3TestDouble.reset!
+  end
+
+  # Specs that read or write the import bucket need the AWS SDK client replaced.
+  # Tagged specs opt in via `:s3` so unrelated examples keep a real (unused)
+  # client and fail loudly if the application ever reaches S3 unexpectedly.
+  config.before(:each, :s3) { stub_s3_storage! }
 end

@@ -59,6 +59,9 @@ group :development, :test do
   # End-to-end / BDD feature specs (REQUIREMENTS §5, LLD §12)
   gem "cucumber-rails", require: false
   gem "database_cleaner-active_record", require: false
+
+  # Test data for RSpec and Cucumber (LLD §12)
+  gem "factory_bot_rails", "~> 6.5"
 end
 
 gem "rspec-rails", "~> 8.0"
