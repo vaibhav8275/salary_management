@@ -28,7 +28,8 @@ require_relative 'support/csv_helpers'
 require_relative 'support/api_response_helpers'
 require_relative 'support/audit_helpers'
 require_relative 'support/active_job_helpers'
-require_relative 'support/s3_fake'
+require_relative 'support/active_storage_helpers'
+require_relative 'support/authentication_helpers'
 
 # Ensures that the test database schema matches the current schema file.
 # If there are pending migrations it will invoke `db:test:prepare` to
@@ -83,20 +84,29 @@ RSpec.configure do |config|
   config.include ApiResponseHelpers
   config.include AuditHelpers
   config.include ActiveJobHelpers
-  config.include S3TestDouble
+  config.include ActiveStorageHelpers
+  config.include AuthenticationHelpers
 
-  # Sequences are rewound and the job queues and fake bucket are reset before
-  # every example: database rows are rolled back between examples while these are
-  # not, so each one starts from the same state.
+  # Every endpoint of this API requires a token (LLD §9.4), so request examples
+  # are written as the authenticated caller they normally are — which also makes
+  # the existing suite a standing check that a signed-in HR user still gets the
+  # application's own behaviour. `AuthenticatedRequestVerbs` attaches the header;
+  # examples about the boundary itself call `anonymous_caller!` to drop it.
+  config.include AuthenticatedRequestVerbs, type: :request
+
+  # Sequences are rewound and the job queues are reset before every example:
+  # database rows are rolled back between examples while these are not, so each
+  # one starts from the same state.
   config.before do
     FactoryBot.rewind_sequences
     ReferenceData.reset!
     reset_job_queues!
-    S3TestDouble.reset!
   end
 
-  # Specs that read or write the import bucket need the AWS SDK client replaced.
-  # Tagged specs opt in via `:s3` so unrelated examples keep a real (unused)
-  # client and fail loudly if the application ever reaches S3 unexpectedly.
-  config.before(:each, :s3) { stub_s3_storage! }
+  # Uploaded CSVs are Active Storage blobs on the disk service configured for the
+  # test environment (config/storage.yml `test:`). Files are not transactional,
+  # so the ones an example uploaded are removed once it is over — otherwise a
+  # run leaves a directory of CSVs behind in tmp/storage, and nothing rolls the
+  # rows that pointed at them back.
+  config.after(:suite) { ActiveStorageHelpers.purge_test_blobs! }
 end

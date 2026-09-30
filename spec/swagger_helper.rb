@@ -1,6 +1,28 @@
 require "rails_helper"
 
+# The bearer token for the documented requests.
+#
+# rswag turns the document-level `security` declared below into a required
+# `Authorization` header parameter on every example, and reads the value from a
+# `let` named after the parameter
+# (rswag-specs `request_factory.rb` `derive_security_params` / `extract_getter`).
+# Without this, each documented request would fail with
+# `undefined method 'Authorization'` before it reached the application.
+#
+# The value is the same header the request specs use, so a documented example
+# and its RSpec equivalent authenticate identically. It is a `let` rather than
+# something in a `before` hook so no user is created for the operations that do
+# not ask for a token.
+RSpec.shared_context "documented api requests" do
+  let(:Authorization) { auth_headers.fetch("Authorization") }
+end
+
 RSpec.configure do |config|
+  # Applies to the swagger example groups, which are declared `type: :request`,
+  # and harmlessly to the other request specs: the `let` is only read when
+  # something builds a documented request.
+  config.include_context "documented api requests", type: :request
+
   # Directory where swagger.json is written (must exist before swaggerize runs).
   config.openapi_root = Rails.root.join("swagger").to_s
 
@@ -15,13 +37,72 @@ RSpec.configure do |config|
         description: <<~DESC
           REST API for the Salary Management system.
           Handles the employee directory, salary records, bulk imports and reporting.
+
+          ## Authentication
+
+          Every endpoint needs the token issued by `POST /api/v1/auth/login`
+          (LLD §9.4). Sign in there, then use the **Authorize** button at the top
+          of this page to paste the token value; the docs and every request will
+          carry it as `Authorization: Bearer <token>`.
+
+          The token is returned in the `Authorization` *response* header of the
+          sign-in call. Take everything after `Bearer ` when pasting it into
+          **Authorize** — the field takes the token itself, not the header.
         DESC
       },
       servers: [
         { url: "http://localhost:3000", description: "Local development" }
       ],
+      # Declared once for the whole document rather than repeated per operation:
+      # the API has exactly one authentication scheme and it applies to
+      # everything. `POST /api/v1/auth/login` opts out with `security: []`,
+      # because it is where the token comes from.
+      security: [
+        { bearerAuth: [] }
+      ],
       components: {
+        # The `Authorize` button in the docs is generated from this scheme, so
+        # naming it here is what makes the token usable from the documentation
+        # rather than something a reader has to construct by hand.
+        securitySchemes: {
+          bearerAuth: {
+            type: :http,
+            scheme: :bearer,
+            bearerFormat: "JWT",
+            description: "The JWT returned in the `Authorization` response header " \
+                         "of `POST /api/v1/auth/login`. Paste the token without the " \
+                         "`Bearer ` prefix. Tokens are not revocable and expire on " \
+                         "their own (LLD §9.4)."
+          }
+        },
         schemas: {
+          # ── Authentication ───────────────────────────────────────────────
+          # The credentials are nested under `user` because that is the key
+          # Devise's warden strategy reads them from, not a shape chosen for
+          # the document.
+          LoginRequest: {
+            type: :object,
+            properties: {
+              user: {
+                type: :object,
+                properties: {
+                  email:    { type: :string, format: :email, example: "hr@example.com" },
+                  password: { type: :string, format: :password }
+                },
+                required: %w[email password]
+              }
+            },
+            required: %w[user]
+          },
+          # Deliberately not the `User` model: the response says who signed in
+          # and never carries the password digest.
+          SignedInUser: {
+            type: :object,
+            properties: {
+              email: { type: :string, format: :email, example: "hr@example.com" }
+            },
+            required: %w[email]
+          },
           # ── Shared primitives ──────────────────────────────────────────────
           Error: {
             type: :object,
@@ -129,9 +210,37 @@ RSpec.configure do |config|
               total_records:     { type: :integer, example: 200 },
               processed_records: { type: :integer, example: 198 },
               failed_records:    { type: :integer, example: 2 },
+              # The uploader's email, not the raw created_by id: null when the
+              # account behind the import no longer exists.
+              created_by:        { type: :string,  example: "hr.manager1@example.com", nullable: true },
               created_at:        { type: :string,  format: "date-time" }
             },
             required: %w[id filename status total_records processed_records failed_records]
+          },
+          SalaryImportError: {
+            type: :object,
+            properties: {
+              id:            { type: :integer },
+              # 0 marks the synthetic row that carries a whole-file failure reason,
+              # as opposed to a line in the CSV.
+              row_number:    { type: :integer, example: 4 },
+              # Null when the row could not be resolved to an employee — a blank
+              # or unknown employee_id is itself a reason for failure.
+              employee_id:   { type: :integer, example: 42, nullable: true },
+              error_message: { type: :string,  example: "Invalid base_salary 'abc'" },
+              raw_data:      { type: :object, additionalProperties: true,
+                               example: { "employee_id" => "7", "base_salary" => "abc" } },
+              created_at:    { type: :string,  format: "date-time" }
+            },
+            required: %w[id row_number error_message raw_data]
+          },
+          SalaryImportErrorSummaryRow: {
+            type: :object,
+            properties: {
+              error_message: { type: :string,  example: "Unknown employee 999999" },
+              count:         { type: :integer, example: 12 }
+            },
+            required: %w[error_message count]
           },
           # ── Report rows ───────────────────────────────────────────────────
           ReportRow: {
@@ -161,11 +270,13 @@ RSpec.configure do |config|
             },
             required: %w[effective_date currency amount]
           },
+          # One key is present per `group_by`; only `count` is always there.
           EmployeeCountRow: {
             type: :object,
             properties: {
               department: { type: :string,  example: "Engineering" },
               country:    { type: :string,  example: "United States" },
+              job_title:  { type: :string,  example: "Software Engineer" },
               count:      { type: :integer, example: 15 }
             },
             required: %w[count]

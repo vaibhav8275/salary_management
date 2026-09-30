@@ -44,6 +44,13 @@ gem "thruster", require: false
 gem "image_processing", "~> 1.2"
 
 group :development, :test do
+  # Loads `.env` in development and test so local secrets (AWS credentials for
+  # the S3 bucket, the database password) can live outside version control.
+  # `.env` is gitignored and `.env.example` is the committed template, so the
+  # repository never holds a real value. Development and test only: production
+  # gets its secrets from `config/deploy.yml` via Kamal, not from a file on disk.
+  gem "dotenv-rails", require: false
+
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
 
@@ -66,10 +73,38 @@ group :development, :test do
   gem "rswag-api", "~> 2.17"
   gem "rswag-ui", "~> 2.17"
   gem "rswag-specs", "~> 2.17"
+
+  # json is pinned to the 2.x line, which is where the API schema specs can run.
+  #
+  # `rswag-specs` validates every example's response body with `json-schema`,
+  # and json-schema 6.2.0 (still the latest release) parses it with
+  # `JSON.parse(body, quirks_mode: true)`. json 3.0 forwards that option to the
+  # native parser as a keyword, which rejects it:
+  #
+  #   ArgumentError: unknown keyword: quirks_mode
+  #
+  # The failure happens while reading the body, so it hits every documented
+  # response regardless of the request itself and looks like an application bug.
+  # json 2.x ignores options it does not know, which is the behaviour
+  # json-schema still expects. Rails only requires `json >= 0`, so the pin costs
+  # the application nothing.
+  #
+  # Drop this as soon as json-schema stops passing `quirks_mode`, so the
+  # application can move to json 3.x.
+  gem "json", "~> 2.21"
+
+  # Synthetic data for `db/seeds.rb` and `script/generate_sample_salary_csv.rb`.
+  # Development and test only — never loaded in production.
+  gem "faker", "~> 3.8"
 end
 
 gem "rspec-rails", "~> 8.0"
 
 gem "blueprinter", "~> 1.3"
 
-
+# Authentication at the API boundary (ARCHITECTURE §7.4). Devise validates
+# credentials, devise-jwt issues and verifies the bearer token; `bcrypt` is the
+# password hashing algorithm Devise's `database_authenticatable` uses.
+gem "devise", "~> 5.0"
+gem "devise-jwt", "~> 0.13.0"
+gem "bcrypt", "~> 3.1"

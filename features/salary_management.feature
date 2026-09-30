@@ -40,8 +40,8 @@ Feature: Salary management
     And the salary for 2026-01-01 for "Ada Lovelace" should be 60000 USD
     And the salary for 2027-01-01 for "Ada Lovelace" should be 65000 USD
 
-  # REQUIREMENTS FR-2.4, BR-1 — a correction updates the same period
-  Scenario: Correct an existing salary record
+  # REQUIREMENTS FR-2.4, BR-1 — an edit updates the same period
+  Scenario: Edit an existing salary record
     Given the employee "Ada Lovelace" has a salary of 60000 USD effective from 2026-01-01
     When the HR Manager updates the salary effective from 2026-01-01 for "Ada Lovelace" with:
       | base_salary | bonus | allowance |
@@ -61,7 +61,7 @@ Feature: Salary management
     And the salary for 2026-01-01 for "Ada Lovelace" should be 60000 USD
     And the audit history for "Ada Lovelace" contains 1 entry
 
-  # REQUIREMENTS FR-2.7, LLD §3
+  # REQUIREMENTS FR-2.6, LLD §3
   Scenario: A negative base salary is rejected
     Given the employee "Ada Lovelace" has a salary of 60000 USD effective from 2026-01-01
     When the HR Manager creates a salary for "Ada Lovelace" with:
@@ -71,7 +71,7 @@ Feature: Salary management
     And the response should include errors
     And the employee "Ada Lovelace" should have exactly 1 salary record
 
-  # REQUIREMENTS FR-2.7, LLD §3
+  # REQUIREMENTS FR-2.6, LLD §3
   Scenario: A negative bonus is rejected
     Given the employee "Ada Lovelace" has a salary of 60000 USD effective from 2026-01-01
     When the HR Manager creates a salary for "Ada Lovelace" with:
@@ -80,7 +80,7 @@ Feature: Salary management
     Then the response status should be 422
     And the employee "Ada Lovelace" should have exactly 1 salary record
 
-  # REQUIREMENTS FR-2.7
+  # REQUIREMENTS FR-2.6
   Scenario: A salary without an effective date is rejected
     Given the employee "Ada Lovelace" has a salary of 60000 USD effective from 2026-01-01
     When the HR Manager creates a salary for "Ada Lovelace" with:
@@ -90,7 +90,7 @@ Feature: Salary management
     And the response should include errors
     And the employee "Ada Lovelace" should have exactly 1 salary record
 
-  # REQUIREMENTS FR-2.7
+  # REQUIREMENTS FR-2.6
   Scenario: A non numeric base salary is rejected
     Given the employee "Ada Lovelace" has a salary of 60000 USD effective from 2026-01-01
     When the HR Manager creates a salary for "Ada Lovelace" with:
@@ -110,7 +110,7 @@ Feature: Salary management
     And the salary for 2026-01-01 for "Ada Lovelace" should be 60000 USD
 
   # LLD §3 — updating a period that does not exist is not possible
-  Scenario: Correcting an effective period that has no record is rejected
+  Scenario: Editing an effective period that has no record is rejected
     Given the employee "Ada Lovelace" has a salary of 60000 USD effective from 2026-01-01
     When the HR Manager updates the salary effective from 2025-01-01 for "Ada Lovelace" with:
       | base_salary | bonus | allowance |

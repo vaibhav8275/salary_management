@@ -9,11 +9,13 @@ RSpec.describe "Employees API", type: :request do
       produces    "application/json"
 
       parameter name: :search,     in: :query, type: :string,  required: false,
-                description: "Filter by name (first, last, full), email or id (FR-1.3)"
+                description: "Filter by name (first, last, full), email, job title or id (FR-1.3)"
       parameter name: :department, in: :query, type: :string,  required: false,
                 description: "Filter by exact department name"
       parameter name: :country,    in: :query, type: :string,  required: false,
                 description: "Filter by exact country name"
+      parameter name: :job_title,  in: :query, type: :string,  required: false,
+                description: "Filter by exact job title"
       parameter name: :page,       in: :query, type: :integer, required: false,
                 description: "Page number (default: 1)"
       parameter name: :per_page,   in: :query, type: :integer, required: false,

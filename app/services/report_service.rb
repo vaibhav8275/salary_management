@@ -45,28 +45,43 @@ class ReportService
     end
   end
 
-  def employee_count_by_department(department: nil, country: nil)
+  def employee_count_by_department(department: nil, country: nil, job_title: nil)
     scope = Employee
-      .joins(:department, :country)
+      .joins(:department, :country, :job_title)
       .group("departments.name")
       .order("departments.name ASC")
       .select("departments.name AS department_name, COUNT(employees.id) AS count")
 
-    scope = apply_employee_filters(scope, department: department, country: country)
+    scope = apply_employee_filters(scope, department: department, country: country, job_title: job_title)
 
     scope.map { |row| { department: row.department_name, count: row.count } }
   end
 
-  def employee_count_by_country(department: nil, country: nil)
+  def employee_count_by_country(department: nil, country: nil, job_title: nil)
     scope = Employee
-      .joins(:country, :department)
+      .joins(:country, :department, :job_title)
       .group("countries.name")
       .order("countries.name ASC")
       .select("countries.name AS country_name, COUNT(employees.id) AS count")
 
-    scope = apply_employee_filters(scope, department: department, country: country)
+    scope = apply_employee_filters(scope, department: department, country: country, job_title: job_title)
 
     scope.map { |row| { country: row.country_name, count: row.count } }
+  end
+
+  # JobTitle labels live in `title` rather than `name`.
+  def employee_count_by_job_title(department: nil, country: nil, job_title: nil)
+    scope = Employee
+      .joins(:job_title, :department, :country)
+      .group("job_titles.title")
+      .order("job_titles.title ASC")
+      # Aliased like the other two counts: a bare `job_title` alias would collide
+      # with the `job_title_id` attribute on Employee.
+      .select("job_titles.title AS job_title_name, COUNT(employees.id) AS count")
+
+    scope = apply_employee_filters(scope, department: department, country: country, job_title: job_title)
+
+    scope.map { |row| { job_title: row.job_title_name, count: row.count } }
   end
 
   def salary_distribution(department: nil, country: nil, from: nil, to: nil)
@@ -111,9 +126,10 @@ class ReportService
     scope
   end
 
-  def apply_employee_filters(scope, department: nil, country: nil)
+  def apply_employee_filters(scope, department: nil, country: nil, job_title: nil)
     scope = scope.where(departments: { name: department }) if department.present?
     scope = scope.where(countries: { name: country }) if country.present?
+    scope = scope.where(job_titles: { title: job_title }) if job_title.present?
     scope
   end
 

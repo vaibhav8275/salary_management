@@ -37,8 +37,8 @@ module ActiveJobHelpers
     adapter.performed_jobs.clear
   end
 
-  # LLD §8.1 — the job is handed the import id alone and resolves the CSV
-  # through `salary_imports.s3_object_key`, so that is the only argument here.
+  # LLD §8.1 — the job is handed the import id alone and reads the CSV off the
+  # import's attachment, so that is the only argument here.
   def run_import_job(salary_import)
     SalaryImportJob.perform_now(salary_import.id)
   end

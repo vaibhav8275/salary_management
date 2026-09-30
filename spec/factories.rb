@@ -10,6 +10,15 @@
 # records, which a named currency, country or department needs — see
 # ReferenceData.
 FactoryBot.define do
+  # The account that can reach the API (LLD §9.4). The password is a test
+  # fixture rather than a credential: it is fixed so the login examples can sign
+  # in without restating it, and it reaches no real inbox or system. There is
+  # one persona and no role, so this factory has nothing to vary.
+  factory :user do
+    sequence(:email) { |n| "hr.manager#{n}@example.com" }
+    password { "correct-horse-battery-staple" }
+  end
+
   factory :currency do
     sequence(:code) { |n| format("C%02d", n) }
     sequence(:name) { |n| "Test Currency #{n}" }
@@ -73,15 +82,35 @@ FactoryBot.define do
     effective_date { Date.new(2025, 1, 1) }
   end
 
+  # An import is only meaningful with its CSV attached (LLD §2.6), so the
+  # factory attaches one the way an upload would. `csv_body` is what the worker
+  # will read, which lets an example state the file it is about to be processed:
+  #
+  #   create(:salary_import, csv_body: csv_from_rows(rows))
+  #
+  # The default is a header-only file, so `create(:salary_import)` describes an
+  # import that is waiting for work rather than one with rows in it.
   factory :salary_import do
     sequence(:filename) { |n| "salaries-#{n}.csv" }
-    sequence(:s3_object_key) { |n| format("imports/%d/salaries.csv", n) }
     status { :pending }
     total_records { 0 }
     processed_records { 0 }
     failed_records { 0 }
     created_by { 42 }
     started_at { nil }
+
+    transient do
+      csv_body { "employee_id,effective_date,base_salary,bonus,allowance\n" }
+      csv_content_type { "text/csv" }
+    end
+
+    after(:build) do |import, evaluator|
+      import.csv_file.attach(
+        io: StringIO.new(evaluator.csv_body),
+        filename: import.filename,
+        content_type: evaluator.csv_content_type
+      )
+    end
 
     trait :processing do
       status { :processing }

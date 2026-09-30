@@ -1,10 +1,41 @@
 Rails.application.routes.draw do
   # Swagger UI and raw OpenAPI JSON (rswag-ui + rswag-api).
-  mount Rswag::Ui::Engine => "/api-docs"
-  mount Rswag::Api::Engine => "/api-docs"
+  #
+  # Guarded because the rswag gems live in the development/test group and are
+  # not loaded in production. Naming `Rswag` unconditionally raised NameError at
+  # boot, which took down the whole app rather than just this feature.
+  # `defined?` only inspects the constant, so it returns false in production
+  # instead of raising.
+  if defined?(Rswag::Ui) && defined?(Rswag::Api)
+    mount Rswag::Ui::Engine => "/api-docs"
+    mount Rswag::Api::Engine => "/api-docs"
+  end
 
-  # External health check (kept from the Rails 8 default scaffold).
+  # External health check (kept from the Rails 8 default scaffold). Reachable
+  # without a token on purpose: a load balancer or uptime check has no way to
+  # authenticate, and it lives in `Rails::HealthController`, which does not
+  # inherit from `ApplicationController`.
   get "up" => "rails/health#show", as: :rails_health_check
+
+  # Authentication (LLD §9.4). `skip: :all` declares the Devise mapping without
+  # any of Devise's conventional routes — the mapping is what `current_user`,
+  # `authenticate_user!` and Warden use, and generating routes is not wanted
+  # here, because Devise's `devise_for` would also publish a sign-out endpoint
+  # and logout is out of scope.
+  #
+  # The `path` and `path_names` still matter: devise-jwt reads them off the
+  # mapping to work out which request it dispatches a token for, so the path
+  # declared below is the one it matches `POST` against.
+  devise_for :users, skip: :all, path: "api/v1/auth", path_names: { sign_in: "login" }
+
+  # The only authentication endpoint this API has: credentials in, JWT out.
+  # Declared inside `devise_scope` so the request carries the `:user` mapping —
+  # the same scope the token is issued and read under. `devise_scope` is a
+  # routing constraint rather than a path prefix, so this stays a single route
+  # and no nested namespace is implied.
+  devise_scope :user do
+    post "api/v1/auth/login", to: "api/v1/sessions#create"
+  end
 
   namespace :api do
     namespace :v1 do
@@ -18,11 +49,12 @@ Rails.application.routes.draw do
         end
       end
 
-      resources :salary_records, only: [], path: "salary-records" do
-        post :revert, on: :member
+      resources :salary_imports, only: %i[create index show], path: "salary-imports" do
+        # Nested rather than a separate top-level resource: an error row has no
+        # meaning without the import it belongs to, and neither does the file.
+        get :errors, on: :member
+        get :csv, on: :member
       end
-
-      resources :salary_imports, only: %i[create index show], path: "salary-imports"
 
       get "reports/average-salary-by-department", to: "reports#average_salary_by_department"
       get "reports/total-payroll-by-country", to: "reports#total_payroll_by_country"

@@ -1,7 +1,7 @@
 module Api
   module V1
     class ReportsController < ApplicationController
-      GROUPINGS = %w[department country].freeze
+      GROUPINGS = %w[department country job_title].freeze
 
       def average_salary_by_department
         render_data(reports.average_salary_by_department(**report_filters))
@@ -21,14 +21,19 @@ module Api
 
       def employee_counts
         unless GROUPINGS.include?(params[:group_by])
-          return render_error(message: "group_by must be department or country")
+          return render_error(message: "group_by must be one of: #{GROUPINGS.join(', ')}")
         end
 
-        filters = { department: params[:department], country: params[:country] }
-        rows = if params[:group_by] == "department"
-                 reports.employee_count_by_department(**filters)
-        else
-                 reports.employee_count_by_country(**filters)
+        filters = {
+          department: params[:department],
+          country: params[:country],
+          job_title: params[:job_title]
+        }
+
+        rows = case params[:group_by]
+        when "department" then reports.employee_count_by_department(**filters)
+        when "country" then reports.employee_count_by_country(**filters)
+        else reports.employee_count_by_job_title(**filters)
         end
 
         render_data(rows)

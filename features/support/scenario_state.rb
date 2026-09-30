@@ -71,21 +71,13 @@ module ScenarioState
     record
   end
 
-  # LLD §3 — correcting a period that holds no record has to be rejected. The
+  # LLD §3 — editing a period that holds no record has to be rejected. The
   # documented update path carries a record id, so a period with no record is
   # addressed with an id that cannot exist. The request stays well formed, and
   # the scenarios assert that no record is created for the period.
   def salary_record_id_for(name, effective_date)
     employee = employee_named(name)
     SalaryRecord.find_by(employee_id: employee.id, effective_date: parse_date(effective_date))&.id || 0
-  end
-
-  def most_recently_updated_salary_record(name)
-    employee = employee_named(name)
-    record = SalaryRecord.where(employee_id: employee.id).order(updated_at: :desc, id: :desc).first
-    raise "Test setup error: #{name.inspect} has no salary record" if record.nil?
-
-    record
   end
 
   def employee_full_name(employee)

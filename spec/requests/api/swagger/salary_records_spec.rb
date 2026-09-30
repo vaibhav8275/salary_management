@@ -15,10 +15,17 @@ RSpec.describe "Salary Records API", type: :request do
       response "200", "current salary record (null when no record exists)" do
         schema type: :object,
                properties: {
+                 # An employee with no salary record is a normal case rather than
+                 # an error, so `data` is either a record or null. The null branch
+                 # is `nullable` + `enum: [nil]` instead of a bare
+                 # `type: :object`: an unconstrained object branch also matches a
+                 # real record, which makes the two branches ambiguous and fails
+                 # the example with "matched more than one of the required
+                 # schemas".
                  data: {
                    oneOf: [
                      { "$ref" => "#/components/schemas/SalaryRecord" },
-                     { type: :object, nullable: true }
+                     { nullable: true, enum: [ nil ] }
                    ]
                  }
                },
@@ -94,14 +101,14 @@ RSpec.describe "Salary Records API", type: :request do
     parameter name: :id,               in: :path, type: :integer, required: true,
               description: "Employee id"
     parameter name: :salary_record_id, in: :path, type: :integer, required: true,
-              description: "Salary record id to correct"
+              description: "Salary record id to edit"
 
-    patch "Correct a salary record" do
+    patch "Edit a salary record" do
       tags        "Salary"
       operationId "updateSalaryRecord"
       consumes    "application/x-www-form-urlencoded"
       produces    "application/json"
-      description "Corrects an existing salary period. Omitted fields keep their current value (LLD §5.3)."
+      description "Edits an existing salary period. Omitted fields keep their current value, and the effective date cannot be changed (LLD §5.3)."
 
       parameter name: :base_salary, in: :formData, type: :number, required: false,
                 description: "New base salary"
@@ -183,14 +190,40 @@ RSpec.describe "Salary Records API", type: :request do
       tags        "Salary"
       operationId "getSalaryAudit"
       produces    "application/json"
-      description "Full audit trail for all salary changes, newest first (FR-2.5, LLD §7.1)."
+      description <<~DESC
+        The change history of every salary record belonging to this employee,
+        grouped by the record the change belongs to (FR-2.5, LLD §7.1).
 
-      response "200", "audit entries" do
+        One entry per salary record, ordered by each record's most recent change
+        (newest first), and each holding only that record's own versions (newest
+        first). A record that was added but never updated reports just its
+        `create` version.
+
+        The grouping is the point of this response: a flat list of versions
+        answers "what changed?" but not "what happened to *this* record?", which
+        is the question a per-record change log has to answer.
+      DESC
+
+      response "200", "audit entries grouped by salary record" do
         schema type: :object,
                properties: {
                  data: {
                    type: :array,
-                   items: { "$ref" => "#/components/schemas/SalaryAudit" }
+                   items: {
+                     type: :object,
+                     properties: {
+                       salary_record_id: {
+                         type: :integer,
+                         description: "The salary record these versions belong to"
+                       },
+                       versions: {
+                         type: :array,
+                         description: "That record's changes, newest first",
+                         items: { "$ref" => "#/components/schemas/SalaryAudit" }
+                       }
+                     },
+                     required: %w[salary_record_id versions]
+                   }
                  }
                },
                required: %w[data]
@@ -200,41 +233,6 @@ RSpec.describe "Salary Records API", type: :request do
       end
 
       response "404", "employee not found" do
-        schema "$ref" => "#/components/schemas/ErrorEnvelope"
-
-        let(:id) { 999_999 }
-        run_test!
-      end
-    end
-  end
-
-  # ── POST /api/v1/salary-records/:id/revert ──────────────────────────────
-  path "/api/v1/salary-records/{id}/revert" do
-    parameter name: :id, in: :path, type: :integer, required: true,
-              description: "Salary record id"
-
-    post "Revert last salary change" do
-      tags        "Salary"
-      operationId "revertSalaryRecord"
-      produces    "application/json"
-      description "Restores the salary record to its previous state (LLD §9)."
-
-      response "200", "salary reverted" do
-        schema type: :object,
-               properties: {
-                 data: { "$ref" => "#/components/schemas/SalaryRecord" }
-               },
-               required: %w[data]
-
-        let(:id) do
-          record = create(:salary_record, base_salary: 50_000)
-          SalaryService.new.update_salary_record(record, base_salary: 60_000, bonus: 0, allowance: 0)
-          record.id
-        end
-        run_test!
-      end
-
-      response "404", "salary record not found" do
         schema "$ref" => "#/components/schemas/ErrorEnvelope"
 
         let(:id) { 999_999 }

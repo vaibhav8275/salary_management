@@ -74,15 +74,17 @@ RSpec.describe "Reports API", type: :request do
       tags        "Reports"
       operationId "employeeCounts"
       produces    "application/json"
-      description "Head count grouped by department or country (FR-7.5). No salary record is required for an employee to be counted."
+      description "Head count grouped by department, country or job title (FR-7.5). No salary record is required for an employee to be counted."
 
       parameter name: :group_by,   in: :query, type: :string, required: true,
-                enum: %w[department country],
+                enum: %w[department country job_title],
                 description: "Dimension to group by"
       parameter name: :department, in: :query, type: :string, required: false,
                 description: "Filter by department name"
       parameter name: :country,    in: :query, type: :string, required: false,
                 description: "Filter by country name"
+      parameter name: :job_title,  in: :query, type: :string, required: false,
+                description: "Filter by job title"
 
       response "200", "count data" do
         schema type: :object,

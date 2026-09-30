@@ -71,13 +71,14 @@ How each technology is used is described in
 
 ## What the System Does
 
-- **Employee directory** — search by employee ID or name, filter by department
-  and country, paginate results, and view employee details (including job title)
+- **Employee directory** — search by employee ID, name or job title, filter by
+  department, country and job title, paginate results, and view employee details
   across roughly 10,000 employees.
-- **Salary management** — view current salary, create and correct salary records
-  across effective periods, and keep salary history instead of overwriting it.
-- **Audit history** — see what changed, when, and who changed it, and revert an
-  unintended change without destroying the audit trail.
+- **Salary management** — view current salary, add and edit salary records across
+  effective periods, and keep salary history instead of overwriting it.
+- **Audit history** — each salary record carries its own change log, so you can
+  see what changed to *that* period, when, and who changed it, without destroying
+  the audit trail. Unintended changes are fixed by editing the record.
 - **Bulk salary management** — upload CSV salary changes, process them
   asynchronously in batches, report invalid and skipped rows, and never let an
   old export overwrite newer salary data.

@@ -1,12 +1,12 @@
 require "rails_helper"
 
-# FR-2.1 to FR-2.8 / LLD §5 and §10.1 — reading, creating and correcting a
+# FR-2.1 to FR-2.7 / LLD §5 and §9.1 — reading, creating and editing a
 # salary for one employee.
 #
-# LLD §10.1 lists no create endpoint, but FR-2.3 requires entering a new salary
+# LLD §9.1 lists no create endpoint, but FR-2.3 requires entering a new salary
 # period, so `POST /api/v1/employees/:id/salary` is the assumed route. Request
 # parameters are assumed to be sent at the top level rather than nested under
-# "salary"; both are assumptions LLD §10 leaves open.
+# "salary"; both are assumptions LLD §9 leaves open.
 RSpec.describe "Employee salary", type: :request do
   let(:employee) { create(:employee) }
 
@@ -139,7 +139,7 @@ RSpec.describe "Employee salary", type: :request do
   describe "PATCH /api/v1/employees/:id/salary/:salary_record_id" do
     let(:record) { create(:salary_record, employee: employee, effective_date: Date.new(2026, 1, 1), base_salary: 60_000) }
 
-    # LLD §5.3 / FR-2.4 — a correction updates the same period.
+    # LLD §5.3 / FR-2.4 — an edit updates the same period.
     it "updates the record" do
       patch "/api/v1/employees/#{employee.id}/salary/#{record.id}", params: { base_salary: "62000" }
 
@@ -180,6 +180,19 @@ RSpec.describe "Employee salary", type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(record.reload.base_salary).to eq(BigDecimal("60000.0"))
+    end
+
+    # The effective date is what identifies a period, so an edit changes the
+    # amounts only. A caller sending a date must not be able to reorder history.
+    it "ignores an effective_date in the request" do
+      original_date = record.effective_date
+
+      patch "/api/v1/employees/#{employee.id}/salary/#{record.id}",
+            params: { base_salary: "62000", effective_date: "2019-01-01" }
+
+      expect(response).to have_http_status(:ok)
+      expect(record.reload.effective_date).to eq(original_date)
+      expect(record.reload.base_salary).to eq(BigDecimal("62000.0"))
     end
 
     it "returns 404 for an unknown record id" do

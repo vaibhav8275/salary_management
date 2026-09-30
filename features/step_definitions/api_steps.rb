@@ -1,7 +1,7 @@
 # Response-level assertions shared by every feature.
 #
 # "Successful" is asserted as any 2xx rather than a single code, because the LLD
-# does not fix the response contract (LLD §10) and a create endpoint may
+# does not fix the response contract (LLD §9) and a create endpoint may
 # reasonably answer 200 or 201. Everything else is asserted precisely.
 Then("the response should be successful") do
   expect(api_status).to be_between(200, 299),

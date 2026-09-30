@@ -3,7 +3,7 @@
   "info": {
     "title": "Salary Management API",
     "version": "v1",
-    "description": "REST API for the Salary Management system.\nHandles the employee directory, salary records, bulk imports and reporting.\n"
+    "description": "REST API for the Salary Management system.\nHandles the employee directory, salary records, bulk imports and reporting.\n\n## Authentication\n\nEvery endpoint needs the token issued by `POST /api/v1/auth/login`\n(LLD §9.4). Sign in there, then use the **Authorize** button at the top\nof this page to paste the token value; the docs and every request will\ncarry it as `Authorization: Bearer <token>`.\n\nThe token is returned in the `Authorization` *response* header of the\nsign-in call. Take everything after `Bearer ` when pasting it into\n**Authorize** — the field takes the token itself, not the header.\n"
   },
   "servers": [
     {
@@ -11,8 +11,60 @@
       "description": "Local development"
     }
   ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "The JWT returned in the `Authorization` response header of `POST /api/v1/auth/login`. Paste the token without the `Bearer ` prefix. Tokens are not revocable and expire on their own (LLD §9.4)."
+      }
+    },
     "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "format": "email",
+                "example": "hr@example.com"
+              },
+              "password": {
+                "type": "string",
+                "format": "password"
+              }
+            },
+            "required": [
+              "email",
+              "password"
+            ]
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "SignedInUser": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "hr@example.com"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -280,6 +332,11 @@
             "type": "integer",
             "example": 2
           },
+          "created_by": {
+            "type": "string",
+            "example": "hr.manager1@example.com",
+            "nullable": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -292,6 +349,62 @@
           "total_records",
           "processed_records",
           "failed_records"
+        ]
+      },
+      "SalaryImportError": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "row_number": {
+            "type": "integer",
+            "example": 4
+          },
+          "employee_id": {
+            "type": "integer",
+            "example": 42,
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "example": "Invalid base_salary 'abc'"
+          },
+          "raw_data": {
+            "type": "object",
+            "additionalProperties": true,
+            "example": {
+              "employee_id": "7",
+              "base_salary": "abc"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "row_number",
+          "error_message",
+          "raw_data"
+        ]
+      },
+      "SalaryImportErrorSummaryRow": {
+        "type": "object",
+        "properties": {
+          "error_message": {
+            "type": "string",
+            "example": "Unknown employee 999999"
+          },
+          "count": {
+            "type": "integer",
+            "example": 12
+          }
+        },
+        "required": [
+          "error_message",
+          "count"
         ]
       },
       "ReportRow": {
@@ -373,6 +486,10 @@
             "type": "string",
             "example": "United States"
           },
+          "job_title": {
+            "type": "string",
+            "example": "Software Engineer"
+          },
           "count": {
             "type": "integer",
             "example": 15
@@ -385,6 +502,58 @@
     }
   },
   "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "summary": "Sign in",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "login",
+        "security": [],
+        "description": "Exchanges an email address and password for a JWT (LLD §9.4,\nREQUIREMENTS AU-2, AU-3).\n\nOn success the token is returned in the `Authorization` response header as\n`Bearer <jwt>`; the body only says which account signed in. Use the **Authorize**\nbutton above and paste the token, without the `Bearer ` prefix, to call every\nother endpoint in this API.\n\nThere is no sign-up, sign-out, or password-reset endpoint: the account is\ncreated by an operator with `bin/rails auth:create_hr_user`.\n\nInvalid credentials return 401 with the same body whether or not the email\nhas an account, so the response cannot be used to discover one (AU-2).\n",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "credentials accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SignedInUser"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/v1/employees": {
       "get": {
         "summary": "List employees",
@@ -397,7 +566,7 @@
             "name": "search",
             "in": "query",
             "required": false,
-            "description": "Filter by name (first, last, full), email or id (FR-1.3)",
+            "description": "Filter by name (first, last, full), email, job title or id (FR-1.3)",
             "schema": {
               "type": "string"
             }
@@ -416,6 +585,15 @@
             "in": "query",
             "required": false,
             "description": "Filter by exact country name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "job_title",
+            "in": "query",
+            "required": false,
+            "description": "Filter by exact job title",
             "schema": {
               "type": "string"
             }
@@ -671,7 +849,7 @@
           "Reports"
         ],
         "operationId": "employeeCounts",
-        "description": "Head count grouped by department or country (FR-7.5). No salary record is required for an employee to be counted.",
+        "description": "Head count grouped by department, country or job title (FR-7.5). No salary record is required for an employee to be counted.",
         "parameters": [
           {
             "name": "group_by",
@@ -679,9 +857,10 @@
             "required": true,
             "enum": [
               "department",
-              "country"
+              "country",
+              "job_title"
             ],
-            "description": "Dimension to group by:\n * `department` \n * `country` \n ",
+            "description": "Dimension to group by:\n * `department` \n * `country` \n * `job_title` \n ",
             "schema": {
               "type": "string"
             }
@@ -700,6 +879,15 @@
             "in": "query",
             "required": false,
             "description": "Filter by country name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "job_title",
+            "in": "query",
+            "required": false,
+            "description": "Filter by job title",
             "schema": {
               "type": "string"
             }
@@ -893,7 +1081,7 @@
           "Salary Imports"
         ],
         "operationId": "createSalaryImport",
-        "description": "Uploads a CSV file to S3, persists a SalaryImport record and enqueues\nthe processing job. The file is never processed synchronously (FR-4.6).\nThe S3 object key is never returned (LLD §10.3).\n",
+        "description": "Uploads a CSV file to S3, persists a SalaryImport record and enqueues\nthe processing job. The file is never processed synchronously (FR-4.6).\nThe S3 object key is never returned (LLD §9.3).\n",
         "parameters": [],
         "responses": {
           "201": {
@@ -1018,6 +1206,162 @@
         }
       }
     },
+    "/api/v1/salary-imports/{id}/errors": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "SalaryImport id",
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List the failed rows of a salary import",
+        "tags": [
+          "Salary Imports"
+        ],
+        "operationId": "listSalaryImportErrors",
+        "description": "The rows behind `failed_records`: row_number, employee_id, error_message\nand the raw_data exactly as it arrived in the file. Paginated 50 rows to a\npage, because an import over the full employee set can reject most of its\nrows.\n\n`summary` is a roll-up of these same rows grouped by reason, returned\nalongside the page so the two cannot disagree for an import that is still\nrunning. A whole-file failure appears here as a single row with\nrow_number 0 and no employee_id.\n",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "default": 1,
+            "description": "1-based page number. A missing or invalid value is treated as 1.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "page of failed rows, with counts by reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SalaryImportError"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "current_page": {
+                          "type": "integer",
+                          "example": 1
+                        },
+                        "per_page": {
+                          "type": "integer",
+                          "example": 50
+                        },
+                        "total_count": {
+                          "type": "integer",
+                          "example": 60
+                        },
+                        "total_pages": {
+                          "type": "integer",
+                          "example": 2
+                        }
+                      },
+                      "required": [
+                        "current_page",
+                        "per_page",
+                        "total_count",
+                        "total_pages"
+                      ]
+                    },
+                    "summary": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SalaryImportErrorSummaryRow"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "summary"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "import not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/salary-imports/{id}/csv": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "SalaryImport id",
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Download the uploaded CSV",
+        "tags": [
+          "Salary Imports"
+        ],
+        "operationId": "downloadSalaryImportCsv",
+        "description": "The file exactly as it was uploaded, sent back under the name it was\nuploaded with (LLD §9.3: the storage key is never exposed).\n\nDeliberately not a signed storage URL — that would put a token in a URL\nthe browser can read and send the user to a different origin. A blob can\nbe gone while its attachment record remains, so a missing file is a 404\nwith code `file_missing` rather than a 500.\n",
+        "responses": {
+          "200": {
+            "description": "the uploaded file",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "import not found, or the file is gone",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/employees/{id}/salary": {
       "parameters": [
         {
@@ -1051,8 +1395,10 @@
                           "$ref": "#/components/schemas/SalaryRecord"
                         },
                         {
-                          "type": "object",
-                          "nullable": true
+                          "nullable": true,
+                          "enum": [
+                            null
+                          ]
                         }
                       ]
                     }
@@ -1152,19 +1498,19 @@
           "name": "salary_record_id",
           "in": "path",
           "required": true,
-          "description": "Salary record id to correct",
+          "description": "Salary record id to edit",
           "schema": {
             "type": "integer"
           }
         }
       ],
       "patch": {
-        "summary": "Correct a salary record",
+        "summary": "Edit a salary record",
         "tags": [
           "Salary"
         ],
         "operationId": "updateSalaryRecord",
-        "description": "Corrects an existing salary period. Omitted fields keep their current value (LLD §5.3).",
+        "description": "Edits an existing salary period. Omitted fields keep their current value, and the effective date cannot be changed (LLD §5.3).",
         "parameters": [],
         "responses": {
           "200": {
@@ -1280,10 +1626,10 @@
           "Salary"
         ],
         "operationId": "getSalaryAudit",
-        "description": "Full audit trail for all salary changes, newest first (FR-2.5, LLD §7.1).",
+        "description": "The change history of every salary record belonging to this employee,\ngrouped by the record the change belongs to (FR-2.5, LLD §7.1).\n\nOne entry per salary record, ordered by each record's most recent change\n(newest first), and each holding only that record's own versions (newest\nfirst). A record that was added but never updated reports just its\n`create` version.\n\nThe grouping is the point of this response: a flat list of versions\nanswers \"what changed?\" but not \"what happened to *this* record?\", which\nis the question a per-record change log has to answer.\n",
         "responses": {
           "200": {
-            "description": "audit entries",
+            "description": "audit entries grouped by salary record",
             "content": {
               "application/json": {
                 "schema": {
@@ -1292,7 +1638,24 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/SalaryAudit"
+                        "type": "object",
+                        "properties": {
+                          "salary_record_id": {
+                            "type": "integer",
+                            "description": "The salary record these versions belong to"
+                          },
+                          "versions": {
+                            "type": "array",
+                            "description": "That record's changes, newest first",
+                            "items": {
+                              "$ref": "#/components/schemas/SalaryAudit"
+                            }
+                          }
+                        },
+                        "required": [
+                          "salary_record_id",
+                          "versions"
+                        ]
                       }
                     }
                   },
@@ -1305,57 +1668,6 @@
           },
           "404": {
             "description": "employee not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/salary-records/{id}/revert": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "description": "Salary record id",
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "post": {
-        "summary": "Revert last salary change",
-        "tags": [
-          "Salary"
-        ],
-        "operationId": "revertSalaryRecord",
-        "description": "Restores the salary record to its previous state (LLD §9).",
-        "responses": {
-          "200": {
-            "description": "salary reverted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/SalaryRecord"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "salary record not found",
             "content": {
               "application/json": {
                 "schema": {

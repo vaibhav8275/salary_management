@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# FR-2.2 / LLD §10.1 — the salary history is every period, newest first, and it
+# FR-2.2 / LLD §9.1 — the salary history is every period, newest first, and it
 # is a separate view from the audit history (LLD §7).
 RSpec.describe "GET /api/v1/employees/:id/salary/history", type: :request do
   let(:employee) { create(:employee) }
@@ -59,7 +59,7 @@ RSpec.describe "GET /api/v1/employees/:id/salary/history", type: :request do
     expect(api_data.map { |row| BigDecimal(row["base_salary"].to_s) }).not_to include(BigDecimal("42000.0"))
   end
 
-  it "exposes the record id needed to correct a period" do
+  it "exposes the record id needed to edit a period" do
     get "/api/v1/employees/#{employee.id}/salary/history"
 
     expect(api_data.map { |row| row["id"] }).to all(be_a(Integer))

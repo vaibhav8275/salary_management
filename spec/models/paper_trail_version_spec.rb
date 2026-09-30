@@ -127,17 +127,17 @@ RSpec.describe "Salary record audit trail", type: :model do
     end
   end
 
-  # LLD §7.5 — versions are stored as JSONB, so a revert can rebuild the
-  # previous state from a recorded object.
-  describe "reverting from a version" do
+  # LLD §7.5 — versions are stored as JSONB, so the previous state can be
+  # rebuilt from a recorded object.
+  describe "reifying a version" do
     it "restores the recorded object" do
       record = create(:salary_record, employee: employee, base_salary: 50_000)
       as_hr_manager { record.update!(base_salary: 55_000) }
       update_version = versions_for(record).last
 
-      reverted = update_version.reify(has_one: false)
+      previous = update_version.reify(has_one: false)
 
-      expect(reverted.base_salary).to eq(BigDecimal("50000.0"))
+      expect(previous.base_salary).to eq(BigDecimal("50000.0"))
     end
 
     it "has nothing to reify for the create version" do

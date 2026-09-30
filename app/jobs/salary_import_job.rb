@@ -8,16 +8,37 @@ class SalaryImportJob < ApplicationJob
     @import = SalaryImport.find(import_id)
 
     run
-  rescue StandardError
-    @import.update!(status: :failed) if @import.persisted?
+  rescue StandardError => error
+    record_file_failure(error)
   end
 
   private
 
+  # A failure that stops the whole file — unparseable upload, headers the
+  # validator rejects, anything that raises before or during parsing — has no row
+  # to attribute it to, but the HR Manager still has to be told why. It is
+  # recorded as a single synthetic error at `row_number` 0, which the detail page
+  # renders as a file-level banner rather than a CSV line.
+  #
+  # `failed_records` is incremented alongside it so the two stay equal: the list
+  # only links that count to the detail page, so a whole-file failure recorded
+  # without bumping it would be unreachable.
+  def record_file_failure(error)
+    return unless @import&.persisted?
+
+    @import.salary_import_errors.create!(
+      row_number: 0,
+      employee_id: nil,
+      error_message: "#{error.class}: #{error.message}",
+      raw_data: {}
+    )
+    @import.update!(status: :failed, failed_records: @import.failed_records + 1)
+  end
+
   def run
     @import.update!(status: :processing, started_at: Time.current)
 
-    csv = S3StorageService.new.download(@import.s3_object_key)
+    csv = @import.csv_contents
     rows = parse(csv)
     headers = rows.shift
     raise ArgumentError, "invalid CSV headers" unless CsvRowValidator.new.valid_headers?(headers)

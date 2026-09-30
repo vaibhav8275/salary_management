@@ -50,3 +50,67 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  # RSpec and Cucumber both need a live Postgres, so they share one job rather
+  # than each provisioning their own service container. A failure here is the
+  # point of the exercise: the suite is the only signal that a change did not
+  # break existing behaviour.
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Matches the fallbacks in config/database.yml so the suite runs with
+          # no extra secret handling. These are throwaway credentials for an
+          # ephemeral CI container, not a real database.
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: salary_management_test
+        ports:
+          - 5432:5432
+        # --health-cmd lets the job wait for Postgres to accept connections, so
+        # the first migration does not race the server's own startup.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RAILS_ENV: test
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 5432
+      # Overridden below; Rails reads these in preference to the defaults.
+      SALARY_MANAGEMENT_DATABASE_USERNAME: admin
+      SALARY_MANAGEMENT_DATABASE_PASSWORD: admin
+      SALARY_MANAGEMENT_TEST_DATABASE_NAME: salary_management_test
+      # The suite never reaches S3: Active Storage uses its :test service, and
+      # importing a CSV in a request spec writes to tmp/storage.
+      AWS_ACCESS_KEY_ID: not-used-in-test
+      AWS_SECRET_ACCESS_KEY: not-used-in-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Create the database and load the schema
+        run: bin/rails db:test:prepare
+
+      - name: Run RSpec
+        run: bundle exec rspec --format progress
+
+      - name: Run Cucumber
+        run: bundle exec cucumber --format progress --publish-quiet
+
+      # Catches the class of regression that a green suite misses: a model or
+      # migration that is valid but eager-loads to a constant that does not
+      # resolve. Only meaningful when eager loading is on, hence RAILS_ENV=test.
+      - name: Verify autoloading
+        run: bin/rails zeitwerk:check
+

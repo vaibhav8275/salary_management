@@ -10,6 +10,9 @@ module Api
         scope = apply_search(scope, params[:search])
         scope = scope.where(departments: { name: params[:department] }) if params[:department].present?
         scope = scope.where(countries: { name: params[:country] }) if params[:country].present?
+        # JobTitle stores its label in `title`, not `name`, unlike Department and
+        # Country.
+        scope = scope.where(job_titles: { title: params[:job_title] }) if params[:job_title].present?
 
         page = params[:page].to_i
         page = 1 if page < 1
@@ -42,9 +45,13 @@ module Api
         return scope if term.blank?
 
         like = "%#{term}%"
+        # The join on :job_title is already there for the job_title filter, so
+        # searching the title costs nothing — and the search box advertises
+        # "job title", which it did not actually do before.
         scope.where(
           "first_name ILIKE :like OR last_name ILIKE :like OR email ILIKE :like " \
           "OR CONCAT(first_name, ' ', last_name) ILIKE :like " \
+          "OR job_titles.title ILIKE :like " \
           "OR CAST(employees.id AS text) = :exact",
           like: like,
           exact: term

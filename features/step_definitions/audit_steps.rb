@@ -1,5 +1,5 @@
-# Audit history and revert steps
-# (REQUIREMENTS FR-2.5, FR-2.6, BR-3, BR-4; LLD §7, §9).
+# Audit history steps
+# (REQUIREMENTS FR-2.5, BR-3, BR-4; LLD §7).
 #
 # Count and changeset assertions read the versions table directly, so they work
 # both as preconditions and as outcomes. The "should report ..." steps assert on
@@ -12,6 +12,24 @@ end
 
 Then(/^the audit history for "([^"]*)" contains (\d+) entr(?:y|ies)$/) do |name, count|
   expect(versions_for_employee(name).count).to eq(count.to_i)
+end
+
+Then("the audit history for {string} is grouped by salary record") do |name|
+  groups = audit_groups
+  # Cucumber's step definitions are not RSpec examples, so `all` here is a plain
+  # check rather than the matcher of the same name.
+  malformed = groups.reject { |group| group.key?("salary_record_id") && group.key?("versions") }
+  expect(malformed).to be_empty,
+                       "expected every group to name its record and carry its versions, got: #{api_response_body}"
+
+  record_ids = employee_named(name).salary_records.pluck(:id)
+  foreign = groups.map { |group| group["salary_record_id"] } - record_ids
+  expect(foreign).to be_empty,
+                     "expected only this employee's records, got: #{foreign.inspect} in #{api_response_body}"
+end
+
+Then(/^the audit history group for (\d{4}-\d{2}-\d{2}) for "([^"]*)" contains (\d+) entr(?:y|ies)$/) do |date, name, count|
+  expect(audit_group_for_effective_date(name, date)["versions"].size).to eq(count.to_i)
 end
 
 Then(/^the audit history for "([^"]*)" should not contain a change to ([0-9.]+)$/) do |name, _amount|
@@ -61,8 +79,29 @@ module AuditStepHelpers
     versions_for_employee(name)
   end
 
-  def audit_entries
+  # The response is one group per salary record, so the steps that describe a
+  # single entry read through the group of the record under test rather than off
+  # the top-level array. Salary history is a flat list per employee and the audit
+  # groups are keyed by record id, so the record is found the same way here.
+  def audit_groups
     Array(api_data)
+  end
+
+  def audit_entries
+    audit_groups.flat_map { |group| Array(group["versions"]) }
+  end
+
+  # The group belonging to one salary record, addressed the way a scenario
+  # names it: by the effective date rather than by the id it does not know.
+  def audit_group_for_effective_date(name, effective_date)
+    record = SalaryRecord.find_by!(
+      employee: employee_named(name),
+      effective_date: Date.parse(effective_date)
+    )
+    group = audit_groups.detect { |candidate| candidate["salary_record_id"] == record.id }
+    raise "no audit group for #{effective_date}, got: #{api_response_body}" if group.nil?
+
+    group
   end
 
   # Newest entry regardless of the order the endpoint chooses to return them in.

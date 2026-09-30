@@ -7,7 +7,7 @@ require Rails.root.join("spec/support/csv_helpers")
 require Rails.root.join("spec/support/api_response_helpers")
 require Rails.root.join("spec/support/audit_helpers")
 require Rails.root.join("spec/support/active_job_helpers")
-require Rails.root.join("spec/support/s3_fake")
+require Rails.root.join("spec/support/active_storage_helpers")
 
 # factory_bot_rails wires this up for RSpec example groups; a Cucumber World has
 # to be given the same syntax explicitly.
@@ -16,4 +16,4 @@ World(CsvHelpers)
 World(ApiResponseHelpers)
 World(AuditHelpers)
 World(ActiveJobHelpers)
-World(S3TestDouble)
+World(ActiveStorageHelpers)

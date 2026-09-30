@@ -2,9 +2,6 @@ require "bigdecimal"
 require "bigdecimal/util"
 
 class SalaryService
-  HR_MANAGER = "HR Manager".freeze
-  SOURCE_MANUAL = "manual".freeze
-
   class Outcome
     attr_reader :record
 
@@ -69,26 +66,6 @@ class SalaryService
 
     record = update_salary_record(latest, base_salary: base_salary, bonus: bonus, allowance: allowance)
     Outcome.new(record: record, persisted: record.persisted?, skipped: false)
-  end
-
-  def revert_salary_change(version)
-    return if version.nil?
-
-    previous = version.reify
-    return if previous.nil?
-
-    record = version.item
-    return if record.nil?
-
-    PaperTrail.request(whodunnit: HR_MANAGER, controller_info: { source: SOURCE_MANUAL }) do
-      record.update!(
-        base_salary: previous.base_salary,
-        bonus: previous.bonus,
-        allowance: previous.allowance
-      )
-    end
-
-    record
   end
 
   private

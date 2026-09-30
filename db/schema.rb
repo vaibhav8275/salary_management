@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_021950) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_120001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -105,7 +105,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_021950) do
 
   create_table "salary_imports", force: :cascade do |t|
     t.string "filename", null: false
-    t.string "s3_object_key", null: false
     t.integer "status", default: 0, null: false
     t.integer "total_records", null: false
     t.integer "processed_records", null: false
@@ -130,6 +129,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_021950) do
     t.check_constraint "allowance >= 0::numeric", name: "salary_records_allowance_non_negative"
     t.check_constraint "base_salary >= 0::numeric", name: "salary_records_base_salary_non_negative"
     t.check_constraint "bonus >= 0::numeric", name: "salary_records_bonus_non_negative"
+  end
+
+  create_table "users", force: :cascade do |t|
+    t.string "email", default: "", null: false
+    t.string "encrypted_password", default: "", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email"], name: "index_users_on_email", unique: true
   end
 
   create_table "versions", force: :cascade do |t|

@@ -15,8 +15,17 @@
 default: &default
   adapter: postgresql
   encoding: unicode
-  username: admin
-  password: admin
+  # Credentials come from the environment, not from this file. `.env` supplies
+  # them locally (see `.env.example`); Kamal supplies them in production from
+  # `config/deploy.yml`.
+  #
+  # The fallbacks exist only so a fresh clone works against a stock local
+  # Postgres. They apply when a variable is *either* unset or blank, because
+  # dotenv sets `KEY=` to an empty string rather than leaving it unset — so a
+  # blank `.env.example` must behave the same as an absent value. Production
+  # below overrides all of this with no fallback, and fails loudly.
+  username: <%= ENV["SALARY_MANAGEMENT_DATABASE_USERNAME"].presence || "admin" %>
+  password: <%= ENV["SALARY_MANAGEMENT_DATABASE_PASSWORD"].presence || "admin" %>
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
@@ -24,7 +33,7 @@ default: &default
 
 development:
   <<: *default
-  database: salary_management_development
+  database: <%= ENV["SALARY_MANAGEMENT_DATABASE_NAME"].presence || "salary_management_development" %>
 
   # The specified database role being used to connect to PostgreSQL.
   # To create additional roles in PostgreSQL see `$ createuser --help`.
@@ -58,7 +67,7 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: salary_management_test
+  database: <%= ENV["SALARY_MANAGEMENT_TEST_DATABASE_NAME"].presence || "salary_management_test" %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is
@@ -87,6 +96,13 @@ test:
 production:
   primary: &primary_production
     <<: *default
-    database: salary_management_production
-    username: salary_management
-    password: <%= ENV["SALARY_MANAGEMENT_DATABASE_PASSWORD"] %>
+    # Rails parses the whole file on boot regardless of the current environment,
+    # so an unguarded requirement here would abort a development run too. Guarding
+    # on Rails.env keeps development on the fallbacks above while still making a
+    # missing *or blank* production credential a hard, named failure at boot
+    # rather than a confusing authentication error later. A blank check matters
+    # because `fetch` alone accepts an empty string, which dotenv produces from a
+    # `KEY=` line.
+    database: '<%= Rails.env.production? ? ENV["SALARY_MANAGEMENT_DATABASE_NAME"].presence || raise(KeyError, "SALARY_MANAGEMENT_DATABASE_NAME is required in production") : ENV["SALARY_MANAGEMENT_DATABASE_NAME"] %>'
+    username: '<%= Rails.env.production? ? ENV["SALARY_MANAGEMENT_DATABASE_USERNAME"].presence || raise(KeyError, "SALARY_MANAGEMENT_DATABASE_USERNAME is required in production") : ENV["SALARY_MANAGEMENT_DATABASE_USERNAME"] %>'
+    password: '<%= Rails.env.production? ? ENV["SALARY_MANAGEMENT_DATABASE_PASSWORD"].presence || raise(KeyError, "SALARY_MANAGEMENT_DATABASE_PASSWORD is required in production") : ENV["SALARY_MANAGEMENT_DATABASE_PASSWORD"] %>'

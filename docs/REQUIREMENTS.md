@@ -28,7 +28,7 @@ self-service, administrator or payroll persona exists yet.
 | FR-1.1   | Display employee information                    |
 | FR-1.2   | Display employee ID, name, department, job title, country and hire date |
 | FR-1.3   | Search by employee ID or name                   |
-| FR-1.4   | Filter by department and country                |
+| FR-1.4   | Filter by department, country and job title     |
 | FR-1.5   | Paginate employee results                       |
 | FR-1.6   | Provide an employee detail view                 |
 
@@ -46,14 +46,13 @@ to.
 | FR-2.1   | View the current salary                                  |
 | FR-2.2   | View all historical salary records                       |
 | FR-2.3   | Create a salary record for a new effective period        |
-| FR-2.4   | Correct an existing salary record                        |
-| FR-2.5   | Review changes through audit history                     |
-| FR-2.6   | Revert an unintended change                              |
-| FR-2.7   | Validate salary input                                    |
-| FR-2.8   | Preserve salary history when compensation changes        |
+| FR-2.4   | Edit an existing salary record                           |
+| FR-2.5   | Review changes through per-record audit history          |
+| FR-2.6   | Validate salary input                                    |
+| FR-2.7   | Preserve salary history when compensation changes        |
 
 **BR-1 — Salary history rule.** A salary change with a **new effective date**
-creates a new salary record. A correction to an existing effective period
+creates a new salary record. An edit to an existing effective period
 updates that existing record rather than creating a second record for the same
 effective date.
 
@@ -75,8 +74,13 @@ concepts and must not be conflated.
 
 > **Salary history** answers: *What salary was effective for this employee?*
 >
-> **Audit history** answers: *What changed, when did it change, and who changed
-> it?*
+> **Audit history** answers: *What changed to this salary record, when did it
+> change, and who changed it?*
+
+It is reported **per salary record**. A change log attached to a record is only
+useful if it is that record's log; a single combined feed across an employee's
+records cannot answer "what happened to *this* period?", and asking the reader to
+work that out from interleaved entries is asking them to do the grouping by eye.
 
 **BR-4 — No versions without change.** A new audit version is recorded only when a
 tracked value actually changes. Processing an unchanged salary record must not
@@ -91,7 +95,7 @@ The HR Manager can upload a CSV containing salary changes.
 | -------- | ---------------------------------------------------------- |
 | FR-4.1   | Accept a CSV upload of salary changes                       |
 | FR-4.2   | Create new salary records for new effective periods          |
-| FR-4.3   | Update existing salary records when a period is intentionally corrected |
+| FR-4.3   | Update existing salary records when a period is intentionally edited     |
 | FR-4.4   | Validate imported data                                      |
 | FR-4.5   | Report invalid and skipped rows                            |
 | FR-4.6   | Process imports asynchronously, without blocking the request |
@@ -156,7 +160,7 @@ implementation.
 | FR-7.2   | Salary distribution                                   | Date range, department, country   |
 | FR-7.3   | Total payroll by country                             | Date range                       |
 | FR-7.4   | Salary trends over time                              | Date range                       |
-| FR-7.5   | Employee counts by department and country             | Department, country               |
+| FR-7.5   | Employee counts by department, country and job title | Department, country, job title  |
 
 **BR-8 — Currency is always explicit.** Every salary and every report states its
 currency. A salary is denominated in the currency of the employee's country, so a
@@ -254,7 +258,7 @@ The reasoning behind these choices is recorded in
   employees are placed in existing rows. An employee's salary currency follows
   from their country; an employee relocating to a country paid in another
   currency is a deliberate change, not a per-record currency override.
-- A correction to history is a legitimate HR activity and must be supported
+- An edit to history is a legitimate HR activity and must be supported
   without destroying the record of the earlier value.
 - Old Excel/CSV exports are a realistic failure mode, so stale-import protection
   is a first-class requirement rather than a nice-to-have.
@@ -290,23 +294,40 @@ For a production deployment exposing real compensation data, authentication and
 authorization would be introduced at the API boundary — for example, JWT-based
 authentication with policy-based authorization.
 
+### Authentication
+
+Compensation data is sensitive, so the API is closed to unauthenticated callers.
+The boundary is deliberately thin: one account type, one login endpoint, and a
+bearer token on every request.
+
+| ID | Requirement |
+|----|-------------|
+| AU-1 | The system must reject every request that does not carry a valid bearer token, except the health check. |
+| AU-2 | The system must authenticate a caller with an email address and password held by the backend, and must not store that password in plaintext. |
+| AU-3 | The system must return the session token in the response of a successful login only. |
+| AU-4 | The system must not offer a public account registration, sign-out, or password-reset endpoint. |
+| AU-5 | The system must not treat token possession as permission to see everything: the account model stays free of roles until authorization is specified. |
+
+Deliberately not included: multi-factor authentication, single sign-on, token
+refresh or revocation, password reset, and per-record authorization. These need
+requirements of their own rather than an assumption baked into the code.
+
 ## 8. Success Criteria
 
 1. Find employees in a 10,000-employee dataset
 2. View current salary
 3. View salary history
 4. Update salary with validation
-5. Correct historical salary records
-6. View audit history
-7. Revert unintended changes
-8. Import salary changes through CSV
-9. Process large imports asynchronously
-10. Prevent stale imports from overwriting newer data
-11. Report skipped/invalid import rows
-12. Generate salary reports and queries
-13. Provide a responsive UI
-14. Pass automated tests
-15. Pass static quality/security checks
+5. Edit historical salary records
+6. View the change history of each salary record
+7. Import salary changes through CSV
+8. Process large imports asynchronously
+9. Prevent stale imports from overwriting newer data
+10. Report skipped/invalid import rows
+11. Generate salary reports and queries
+12. Provide a responsive UI
+13. Pass automated tests
+14. Pass static quality/security checks
 16. Deploy successfully to AWS EKS
 
 ## 9. Related Documents

@@ -39,15 +39,26 @@ World(RSpec::Mocks::ExampleMethods)
 Before do
   RSpec::Mocks.setup
   # Scenarios are rolled back, so generated values start from the beginning
-  # again; the fake bucket and job queues are not transactional.
+  # again; uploaded files and job queues are not transactional.
   FactoryBot.rewind_sequences
   ReferenceData.reset!
   reset_scenario_state!
   reset_job_queues!
-  S3TestDouble.reset!
 
-  # The import bucket is always faked: no scenario is allowed to reach AWS.
-  stub_s3_storage!
+
+  # Every route of this API is behind a token, and every scenario is written from
+  # the HR Manager's point of view, so the scenario is signed in once here. The
+  # header comes from `AuthenticationHelpers` (features/support/api_authentication.rb),
+  # the same helper the RSpec request specs use, so a scenario and a request spec
+  # authenticate identically.
+  auth_headers.each { |name, value| header name, value }
+end
+
+# Uploaded CSVs are Active Storage blobs on the test disk service, and a file is
+# not part of the transaction DatabaseCleaner rolls back. Destroying the blobs
+# after each scenario keeps tmp/storage from growing over a run.
+After do
+  purge_test_blobs!
 end
 
 After do

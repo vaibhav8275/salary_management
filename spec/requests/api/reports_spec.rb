@@ -202,6 +202,52 @@ RSpec.describe "Reports", type: :request do
       expect(api_data.map { |row| row["count"] }).to eq([ 3 ])
     end
 
+    it "counts by job title" do
+      2.times { create(:employee, job_title: ReferenceData.job_title("Software Engineer")) }
+      create(:employee, job_title: ReferenceData.job_title("Accountant"))
+
+      get "/api/v1/reports/employee-counts", params: { group_by: "job_title" }
+
+      counts = api_data.to_h { |row| [ row["job_title"], row["count"] ] }
+      expect(counts).to eq("Accountant" => 1, "Software Engineer" => 2)
+    end
+
+    it "filters the job title count by one job title" do
+      3.times { create(:employee, job_title: ReferenceData.job_title("Software Engineer")) }
+      create(:employee, job_title: ReferenceData.job_title("Accountant"))
+
+      get "/api/v1/reports/employee-counts",
+          params: { group_by: "job_title", job_title: "Accountant" }
+
+      expect(api_data).to eq([ { "job_title" => "Accountant", "count" => 1 } ])
+    end
+
+    # A filter on a table the grouping did not join used to raise a missing
+    # FROM-clause error, so the filters are exercised across groupings.
+    it "applies a department filter to a country grouping" do
+      create(:employee, department: ReferenceData.department("Sales"),
+                         country: ReferenceData.country("Nigeria"))
+      create(:employee, department: ReferenceData.department("Engineering"),
+                         country: ReferenceData.country("Nigeria"))
+
+      get "/api/v1/reports/employee-counts",
+          params: { group_by: "country", department: "Sales" }
+
+      expect(api_data).to eq([ { "country" => "Nigeria", "count" => 1 } ])
+    end
+
+    it "applies a job title filter to a department grouping" do
+      create(:employee, department: ReferenceData.department("Sales"),
+                         job_title: ReferenceData.job_title("Accountant"))
+      create(:employee, department: ReferenceData.department("Sales"),
+                         job_title: ReferenceData.job_title("Software Engineer"))
+
+      get "/api/v1/reports/employee-counts",
+          params: { group_by: "department", job_title: "Accountant" }
+
+      expect(api_data).to eq([ { "department" => "Sales", "count" => 1 } ])
+    end
+
     it "rejects an unknown grouping" do
       get "/api/v1/reports/employee-counts", params: { group_by: "salary" }
 

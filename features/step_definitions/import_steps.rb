@@ -92,9 +92,8 @@ end
 
 Then("the import should reference an uploaded file") do
   import = last_import!
-  expect(import.s3_object_key).to be_present
-  expect(fake_s3_bucket.objects).to have_key(import.s3_object_key),
-                                       "the CSV was never written to the bucket"
+  expect(import.csv_file).to be_attached, "the CSV was never attached to the import"
+  expect(import.csv_file.filename.to_s).to end_with(".csv")
 end
 
 Then("a salary import job should be enqueued for the import") do

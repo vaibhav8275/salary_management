@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# FR-1.1 / LLD §10.1 — a single employee, addressed by id.
+# FR-1.1 / LLD §9.1 — a single employee, addressed by id.
 RSpec.describe "GET /api/v1/employees/:id", type: :request do
   let(:employee) do
     create(:employee,

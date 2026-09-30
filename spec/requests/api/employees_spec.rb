@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# FR-1.1 to FR-1.7 / LLD §10.1 — the employee directory. Around 10,000 employees
+# FR-1.1 to FR-1.7 / LLD §9.1 — the employee directory. Around 10,000 employees
 # are in scope, so search, filtering and pagination all have to work at that size.
 #
 # The response envelope is not specified in the LLD ("exact naming and response
@@ -143,6 +143,43 @@ RSpec.describe "GET /api/v1/employees", type: :request do
       expect(api_data.size).to eq(1)
     end
 
+    it "filters by job title" do
+      create(:employee, job_title: ReferenceData.job_title("Software Engineer"))
+      create(:employee, job_title: ReferenceData.job_title("Accountant"))
+
+      get "/api/v1/employees", params: { job_title: "Accountant" }
+
+      expect(api_data.size).to eq(1)
+      expect(api_data.first["job_title"]).to eq("Accountant")
+    end
+
+    it "returns nothing for a job title no one holds" do
+      create(:employee, job_title: ReferenceData.job_title("Software Engineer"))
+
+      get "/api/v1/employees", params: { job_title: "Astronaut" }
+
+      expect(api_data).to be_empty
+    end
+
+    it "combines all three filters" do
+      create(:employee, department: ReferenceData.department("Engineering"),
+                         job_title: ReferenceData.job_title("Software Engineer"),
+                         country: ReferenceData.country("United Kingdom"))
+      create(:employee, department: ReferenceData.department("Engineering"),
+                         job_title: ReferenceData.job_title("Software Engineer"),
+                         country: ReferenceData.country("Nigeria"))
+      create(:employee, department: ReferenceData.department("Sales"),
+                         job_title: ReferenceData.job_title("Software Engineer"),
+                         country: ReferenceData.country("United Kingdom"))
+
+      get "/api/v1/employees", params: {
+        department: "Engineering", job_title: "Software Engineer", country: "United Kingdom"
+      }
+
+      expect(api_data.size).to eq(1)
+      expect(api_data.first["country"]).to eq("United Kingdom")
+    end
+
     it "combines a search term with a filter" do
       create(:employee, first_name: "Ada", last_name: "Lovelace", department: ReferenceData.department("Engineering"))
       create(:employee, first_name: "Ada", last_name: "Byron", department: ReferenceData.department("Sales"))
@@ -150,6 +187,17 @@ RSpec.describe "GET /api/v1/employees", type: :request do
       get "/api/v1/employees", params: { search: "Ada", department: "Engineering" }
 
       expect(api_data.size).to eq(1)
+    end
+
+    # The search box advertises "job title", so the term has to reach the title.
+    it "searches by job title" do
+      create(:employee, first_name: "Grace", job_title: ReferenceData.job_title("Rear Admiral"))
+      create(:employee, first_name: "Katherine", job_title: ReferenceData.job_title("Aeronautics Engineer"))
+
+      get "/api/v1/employees", params: { search: "Rear Admiral" }
+
+      expect(api_data.size).to eq(1)
+      expect(api_data.first["first_name"]).to eq("Grace")
     end
   end
 

@@ -1,18 +1,18 @@
 require "rails_helper"
 
-# LLD §8.1 and §8.3 — the API creates the import, uploads the CSV and enqueues
-# `SalaryImportJob` with the import id alone. The worker fetches the file through
-# `s3_object_key`, moves the import through its status lifecycle, applies the
-# salary rules row by row and records failures instead of aborting the file.
+# LLD §8.1 and §8.3 — the API creates the import with the CSV attached and
+# enqueues `SalaryImportJob` with the import id alone. The worker reads the file
+# back off the import, moves it through its status lifecycle, applies the salary
+# rules row by row and records failures instead of aborting the file.
 #
 # Described by string so the missing constant does not break suite loading.
-RSpec.describe "SalaryImportJob", :s3, type: :job do
+RSpec.describe "SalaryImportJob", type: :job do
   let(:employee) { create(:employee) }
 
+  # The import arrives already carrying the CSV, exactly as the controller
+  # creates it: the worker is handed an id, not a file.
   def staged_import(rows, headers: %w[employee_id effective_date base_salary bonus allowance])
-    salary_import = create(:salary_import)
-    S3TestDouble.contents[salary_import.s3_object_key] = csv_from_rows(rows, headers: headers)
-    salary_import
+    create(:salary_import, csv_body: csv_from_rows(rows, headers: headers))
   end
 
   def run_job(salary_import)
@@ -71,12 +71,62 @@ RSpec.describe "SalaryImportJob", :s3, type: :job do
     end
 
     it "fails when the file cannot be read" do
-      salary_import = create(:salary_import)
-      S3TestDouble.contents.delete(salary_import.s3_object_key)
+      salary_import = create(:salary_import, csv_body: csv_from_rows([ row("2026-01-01", "60000") ]))
+      # The upload is gone by the time the worker looks for it — the real shape
+      # of this failure, and the one the rescue in `perform` exists for.
+      salary_import.csv_file.purge
 
       run_job(salary_import)
 
       expect(salary_import.reload.status).to eq("failed")
+    end
+  end
+
+  # A whole-file failure has no row to attribute it to, but leaving the reason
+  # unrecorded would make the detail page empty and unexplained.
+  describe "recording a whole-file failure" do
+    let(:headers) { "employee_id,effective_date,base_salary,bonus,allowance" }
+
+    it "records the reason when the headers are rejected" do
+      salary_import = staged_import([ row("2026-01-01", "60000") ], headers: %w[id salary])
+
+      run_job(salary_import)
+
+      expect(salary_import.reload.status).to eq("failed")
+      expect(salary_import.salary_import_errors.pluck(:error_message))
+        .to include(a_string_matching(/invalid CSV headers/))
+    end
+
+    it "records the reason when the upload cannot be read" do
+      salary_import = create(:salary_import, csv_body: headers + "\n")
+      salary_import.csv_file.purge
+
+      run_job(salary_import)
+
+      expect(salary_import.reload.status).to eq("failed")
+      expect(salary_import.salary_import_errors.count).to eq(1)
+    end
+
+    it "records it as a synthetic row outside the data rows" do
+      salary_import = staged_import([ row("2026-01-01", "60000") ], headers: %w[id salary])
+
+      run_job(salary_import)
+
+      error = salary_import.salary_import_errors.first
+      expect(error.row_number).to eq(0)
+      expect(error.employee_id).to be_nil
+      expect(error.raw_data).to eq({})
+    end
+
+    # The list only links `failed_records` to the detail page, so a whole-file
+    # failure recorded without bumping it would be unreachable.
+    it "counts the synthetic row in failed_records" do
+      salary_import = staged_import([ row("2026-01-01", "60000") ], headers: %w[id salary])
+
+      run_job(salary_import)
+
+      expect(salary_import.reload.failed_records).to eq(1)
+      expect(salary_import.failed_records).to eq(salary_import.salary_import_errors.count)
     end
   end
 
@@ -250,12 +300,12 @@ RSpec.describe "SalaryImportJob", :s3, type: :job do
   end
 
   describe "reading the file" do
-    it "fetches the CSV through the s3 key on the import" do
+    it "reads the CSV off the import's attachment" do
       salary_import = staged_import([ row("2026-01-01", "60000") ])
 
       run_job(salary_import)
 
-      expect(S3TestDouble.contents).to have_key(salary_import.s3_object_key)
+      expect(salary_import.reload.csv_file).to be_attached
     end
 
     it "marks the import as started" do

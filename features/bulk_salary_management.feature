@@ -232,7 +232,7 @@ Feature: Bulk salary management
     Then the import should have a start timestamp
     And the import should have a completion timestamp
 
-  # REQUIREMENTS FR-6.1, LLD §10.3
+  # REQUIREMENTS FR-6.1, LLD §9.3
   Scenario: List past imports
     Given a completed import for "salaries.csv"
     And a pending import for "other.csv"
@@ -241,7 +241,7 @@ Feature: Bulk salary management
     And the import list should contain 2 imports
     And the import list should include an import with status "pending"
 
-  # REQUIREMENTS FR-6.1, LLD §10.3
+  # REQUIREMENTS FR-6.1, LLD §9.3
   Scenario: View the status of one import
     Given a completed import for "salaries.csv"
     When the HR Manager opens the most recent import

@@ -1,5 +1,5 @@
 # Salary management and salary history steps
-# (REQUIREMENTS FR-2.1 – FR-2.4, FR-2.7, BR-1, BR-2; LLD §5.1 – §5.3).
+# (REQUIREMENTS FR-2.1 – FR-2.4, FR-2.6, BR-1, BR-2; LLD §5.1 – §5.3).
 #
 # The LLD leaves request payload shape open, so create and update send the
 # attributes at the top level, which is the plainest JSON body for a Rails API.
@@ -86,10 +86,6 @@ end
 When(/^the HR Manager updates the salary effective from (\d{4}-\d{2}-\d{2}) for "([^"]*)" with:$/) do |date, name, table|
   patch "/api/v1/employees/#{employee_named(name).id}/salary/#{salary_record_id_for(name, date)}",
         params: table.hashes.first
-end
-
-When("the HR Manager reverts the salary change for {string}") do |name|
-  post "/api/v1/salary-records/#{most_recently_updated_salary_record(name).id}/revert"
 end
 
 Then(/^the current salary should be ([0-9.]+)(?: ([A-Z]{3}))? effective from (\d{4}-\d{2}-\d{2})$/) do |amount, code, date|

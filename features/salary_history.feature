@@ -11,7 +11,7 @@ Feature: Salary history and audit history
   Background:
     Given an employee "Ada Lovelace" exists with currency "USD"
 
-  # REQUIREMENTS FR-2.2, FR-2.8
+  # REQUIREMENTS FR-2.2, FR-2.7
   Scenario: View all historical salary records
     Given the employee "Ada Lovelace" has salary history:
       | effective_date | base_salary | bonus | allowance |
@@ -82,29 +82,32 @@ Feature: Salary history and audit history
     And the audit history for "Ada Lovelace" contains 1 entry
     And the audit history for "Ada Lovelace" should not contain a change to 50000
 
-  # REQUIREMENTS FR-2.6, LLD §9 — revert restores the value by a normal update
-  Scenario: Revert an unintended salary change
+  # REQUIREMENTS FR-2.5 — the audit history is reported per salary record, so a
+  # record's own log can be read without the changes of its neighbours.
+  Scenario: The audit history is grouped by the salary record it belongs to
     Given the employee "Ada Lovelace" has salary history:
       | effective_date | base_salary | bonus | allowance |
       | 2025-01-01     | 50000       | 0     | 0         |
-    And the salary for 2025-01-01 for "Ada Lovelace" was updated to 60000 USD by the HR Manager
-    When the HR Manager reverts the salary change for "Ada Lovelace"
+      | 2026-01-01     | 60000       | 0     | 0         |
+    And the salary for 2025-01-01 for "Ada Lovelace" was updated to 52000 USD by the HR Manager
+    When the HR Manager views the audit history of "Ada Lovelace"
     Then the response should be successful
-    And the salary for 2025-01-01 for "Ada Lovelace" should be 50000 USD
+    And the audit history for "Ada Lovelace" is grouped by salary record
+    And the audit history group for 2025-01-01 for "Ada Lovelace" contains 2 entries
+    And the audit history group for 2026-01-01 for "Ada Lovelace" contains 1 entry
 
-  # LLD §9 — the audit trail is preserved, not rewritten
-  Scenario: Reverting keeps the whole audit sequence
+  # A record that was added but never edited has nothing but its create to
+  # report, so its group is a single entry rather than an empty one.
+  Scenario: A salary record that was never edited reports only its creation
     Given the employee "Ada Lovelace" has salary history:
       | effective_date | base_salary | bonus | allowance |
       | 2025-01-01     | 50000       | 0     | 0         |
-    And the salary for 2025-01-01 for "Ada Lovelace" was updated to 60000 USD by the HR Manager
-    When the HR Manager reverts the salary change for "Ada Lovelace"
-    And the HR Manager views the audit history of "Ada Lovelace"
-    Then the audit history for "Ada Lovelace" contains 3 entries
-    And the audit history should include a change to 60000
-    And the audit history should include a change to 50000
+    And the salary for 2025-01-01 for "Ada Lovelace" was updated to 52000 USD by the HR Manager
+    When the HR Manager views the audit history of "Ada Lovelace"
+    Then the audit history group for 2025-01-01 for "Ada Lovelace" contains 2 entries
+    And the audit history should report the change from 50000 to 52000
 
-  # REQUIREMENTS FR-2.8 — history is preserved, never overwritten
+  # REQUIREMENTS FR-2.7 — history is preserved, never overwritten
   Scenario: A new effective period leaves earlier periods intact
     Given the employee "Ada Lovelace" has salary history:
       | effective_date | base_salary | bonus | allowance |

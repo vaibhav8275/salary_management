@@ -40,7 +40,13 @@ registry:
 env:
   secret:
     - RAILS_MASTER_KEY
+    - AWS_ACCESS_KEY_ID
+    - AWS_SECRET_ACCESS_KEY
   clear:
+    # Bucket the CSV import path reads and writes. Must match the :amazon
+    # service in config/storage.yml.
+    S3_BUCKET: salary-management-1
+
     # Set number of processes dedicated to the Sidekiq worker (default: 1)
     # JOB_CONCURRENCY: 3
 

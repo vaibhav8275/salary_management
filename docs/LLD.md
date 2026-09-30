@@ -263,7 +263,6 @@ deliberate, later change rather than introduced implicitly.
 ```text
 id
 filename
-s3_object_key
 status
 total_records
 processed_records
@@ -278,7 +277,6 @@ updated_at
 | ------------------- | ---------- | ---: | ------------------------------------------------ |
 | `id`                | `bigint`   |   No | Rails default primary key                        |
 | `filename`          | `string`   |   No | Original uploaded filename                       |
-| `s3_object_key`     | `string`   |   No | Key of the CSV in S3; how the worker locates the file |
 | `status`            | `integer`  |   No | Rails enum, see §8.2                             |
 | `total_records`     | `integer`  |   No | Total CSV rows                                   |
 | `processed_records` | `integer`  |   No | Successfully processed rows, including no-op rows |
@@ -288,14 +286,28 @@ updated_at
 | `created_at`        | `datetime` |   No | Rails timestamp                                  |
 | `updated_at`        | `datetime` |   No | Rails timestamp                                  |
 
-`created_by` references the uploading user. In the initial scope there is no user
-table (authentication is out of scope), so this is a plain identifier rather than
-a foreign key.
+`created_by` references the uploading user. Authentication (AU-1 … AU-5,
+`REQUIREMENTS.md` §7) puts a `users` table in the schema, but authorization is
+still out of scope, so this stays a plain identifier rather than a foreign key:
+there is no role or permission to check it against.
 
-**`SalaryImport` owns the uploaded file.** `s3_object_key` is the single link
-between the import operation and its CSV in S3, and it is what lets the API and
-the worker stay decoupled: the job is handed only the import id and reads the key
-from the database it already has to write to. The object is not retained beyond
+**`SalaryImport` owns the uploaded file.** The CSV is an Active Storage
+attachment (`has_one_attached :csv_file`), so the link between the import and its
+file is a row rather than a string that has to be kept in step with a bucket.
+That is what lets the API and the worker stay decoupled — the job is handed only
+the import id and reads the attachment off the row it already has to write to —
+and it is why the file cannot end up in S3 with no import pointing at it: the
+controller builds the record and its attachment and saves them together, so a
+file that fails validation leaves nothing behind.
+
+The attachment is validated by the model on create: present, at most
+`MAX_FILE_SIZE` (2 MB), `.csv` extension, and a content type a CSV is likely to
+arrive as. The extension is the real test; the content-type list is permissive
+because the same file is labelled `text/csv` by curl and
+`application/vnd.ms-excel` by older Excel. Header and row semantics are *not*
+model validation — a CSV whose header line is wrong is a recorded import failure
+(§8.2), not a rejected upload, because FR-4.5 and FR-6.6 ask for failures to be
+reported rather than to abort the request. The object is not retained beyond
 processing in the initial implementation.
 
 ### 2.7 `salary_import_errors`
@@ -407,13 +419,45 @@ extension, and adding that extension is heavier than the protection is worth for
 a write-almost-never table whose rows are validated on every write path anyway.
 The database still enforces NOT NULL and the foreign key from `employees`
 (§2.1, §3); the case-insensitive uniqueness lives in the model
-(`validates :title, uniqueness: { case_sensitive: false }`, §11).
+(`validates :title, uniqueness: { case_sensitive: false }`, §2.9).
 
 The `title` index is non-unique and exists for the name-to-id lookups — the
 directory and any future CSV column that names a role. Reporting by title is
 supported by the association (`Employee` joins/where through
 `job_titles.title`), which is exactly how the department and country reports are
 expressed.
+
+### 2.10 `users`
+
+```text
+id
+email
+encrypted_password
+created_at
+updated_at
+```
+
+| Field                | Rails type | Null | Notes                                       |
+| -------------------- | ---------- | ---: | ------------------------------------------- |
+| `id`                 | `bigint`   |   No | Rails default primary key                    |
+| `email`              | `string`   |   No | Sign-in address; unique                     |
+| `encrypted_password` | `string`   |   No | bcrypt digest — the password is never stored |
+| `created_at`         | `datetime` |   No | Rails timestamp                             |
+| `updated_at`         | `datetime` |   No | Rails timestamp                             |
+
+The account is the whole of the authentication model (AU-1 … AU-5,
+`REQUIREMENTS.md` §7), and its narrowness is the point: no role, no permissions,
+no token column, no profile. Two columns are stored because signing in needs
+exactly two things, and everything a caller is allowed to do is the same for
+every account.
+
+Rows are created by an operator (`bin/rails auth:create_hr_user`) rather than by
+the API, so there is no `registerable` module and no sign-up endpoint. There is
+no `rememberable` or `trackable` state either: the session is a stateless JWT,
+so a token is either parseable and unexpired or it is not, and there is nothing
+server-side to expire. Uniqueness of `email` is a database constraint, since a
+sign-in looks the account up by that column and two rows would make the lookup
+ambiguous.
 
 ## 3. Data Integrity
 
@@ -573,8 +617,7 @@ duplicated between controllers, models and Sidekiq workers:
 SalaryService
   ├── create_salary_record
   ├── update_salary_record
-  ├── apply_imported_salary
-  └── revert_salary_change
+  └── apply_imported_salary
 ```
 
 The service is responsible for:
@@ -683,7 +726,6 @@ need migrating if a third source (scheduled review, API integration) ever appear
 - Actor / `whodunnit`
 - Version metadata: `source` and `salary_import_id` (§7.2)
 - Version retention policy
-- Revert behaviour (§9)
 
 ## 8. Bulk Import Processing
 
@@ -696,22 +738,21 @@ HR
  ▼
 Rails API
  │
- ├── Create SalaryImport
- │
- ├── Upload CSV → S3
+ ├── Create SalaryImport with the CSV
+ │  attached and validated (§2.6)
  │
  └── Enqueue Sidekiq job with salary_import_id
         ↓
      Sidekiq Worker
         ↓
-     Fetch CSV from S3
+     Read the CSV off the import
         ↓
      Process each row
 ```
 
 The API does not synchronously process a large CSV. The job is enqueued with the
 import id alone — `SalaryImportJob.perform_async(salary_import.id)` — and the
-worker finds the file through `salary_imports.s3_object_key`. Nothing about the
+worker finds the file through the import's attachment. Nothing about the
 file is passed through the job arguments, so a job can be retried or re-enqueued
 without re-uploading anything.
 
@@ -750,7 +791,7 @@ be settled during implementation alongside §8.5.
 ```text
 SalaryImportJob.perform_async(salary_import.id)
     ↓
-Load SalaryImport, read CSV from s3_object_key
+Load SalaryImport, read the CSV off its attachment
     ↓
 Set status = processing
     ↓
@@ -810,27 +851,12 @@ are reported and recorded rather than rolling back the entire import.
 
 The exact boundary is finalized during implementation and performance testing.
 
-## 9. Revert
-
-The HR Manager can revert a salary change from audit history. The application
-restores the previous value through a **normal salary update** rather than
-deleting the PaperTrail version:
-
-```text
-Initial:            $50,000
-Incorrect update:   $60,000
-Revert:             $50,000
-```
-
-The audit sequence records all three states, and the revert itself creates a new
-PaperTrail version. The audit trail is preserved, not rewritten.
-
-## 10. API Surface
+## 9. API Surface
 
 Conceptual endpoints; exact naming and response contracts are finalized during
 implementation.
 
-### 10.1 Employees and salary
+### 9.1 Employees and salary
 
 ```text
 GET   /api/v1/employees
@@ -840,17 +866,27 @@ GET   /api/v1/employees/:id/salary/history
 PATCH /api/v1/employees/:id/salary/:salary_record_id
 ```
 
-### 10.2 Audit
+`GET /api/v1/employees` filters on `department`, `country` and `job_title`, each
+an exact match on the reference row's label. `job_title` matches `job_titles.title`
+rather than a `name` column: `JobTitle` labels its field `title` (§2.9), unlike
+`Department` and `Country`. The three filters combine, and `search` covers the job
+title as well as the employee's own columns, because the directory's search box
+offers job title as a searchable field (FR-1.3).
+
+### 9.2 Audit
 
 ```text
-GET  /api/v1/employees/:id/salary/audit
-POST /api/v1/salary-records/:id/revert
+GET /api/v1/employees/:id/salary/audit
 ```
 
 The audit API exposes what the HR UI needs without leaking internal database
-structure. The revert endpoint may be refined during API contract design.
+structure. The response is **grouped by salary record**: one entry per record,
+ordered by that record's most recent change, each holding only that record's own
+versions. A flat list of every version cannot answer "what happened to *this*
+record?", which is the question a per-record change log has to answer, so the
+grouping is part of the contract rather than something the client re-derives.
 
-### 10.3 Bulk import
+### 9.3 Bulk import
 
 ```text
 POST /api/v1/salary-imports
@@ -862,10 +898,32 @@ The frontend polls import status initially. A WebSocket/SSE progress mechanism
 is not required for the initial implementation.
 
 `POST /api/v1/salary-imports` returns the import id, not a processing result: it
-creates the import, uploads the CSV to S3 and enqueues the job (§8.1). The
-uploaded file is referenced by `s3_object_key` and is not exposed to the client.
+creates the import with the CSV attached and enqueues the job (§8.1). The
+attachment is not exposed to the client. A file that fails validation — absent,
+too large, wrong extension, or a content type no CSV arrives as — is a 422, and
+because the record and its attachment are saved together it leaves no import row
+and no uploaded file behind (§2.6).
 
-## 11. Reporting
+### 9.4 Authentication
+
+```text
+POST /api/v1/auth/login
+```
+
+The one endpoint that does not require a token, since it is where a token comes
+from. It verifies an email and password against `users` (§2.10) and, on success,
+answers with the JWT in the `Authorization: Bearer` response header and
+`{"data": {"email": "..."}}` as the body. The token is in the header because that
+is where every later request looks for it; a body field would be a second place
+to forget to read from.
+
+Every `api/v1` endpoint above this one requires the header. There is deliberately
+no sign-up, sign-out, or password reset route, and `devise_for` is mapped with
+`skip: :all` so those routes are never generated by accident — an open
+registration endpoint on a salary system is a much worse default than a missing
+one.
+
+## 10. Reporting
 
 Reports use database-level aggregation rather than loading salary records into
 Ruby memory. To be implemented, per
@@ -876,6 +934,7 @@ Average salary by department
 Total payroll by country
 Employee count by department
 Employee count by country
+Employee count by job title
 Salary distribution
 Salary trends
 ```
@@ -886,18 +945,25 @@ explicit conversion strategy. Monetary reports therefore join to the employee to
 resolve the currency, and group or split by it — for example, total payroll by
 country is reported per currency rather than as one combined figure.
 
+The head counts are non-monetary, so they attach no currency, and they accept all
+three reference filters regardless of which dimension is being grouped: grouping by
+country while filtering on department is a legitimate combination, so every
+grouping joins `departments`, `countries` and `job_titles` rather than only the one
+being reported.
+
 The `job_titles` association (§2.9) supports a future title-based report — for
 example "average salary for Software Engineer in USA" — with the same join
 pattern: group through `employees.job_title_id`, apply the currency semantics
 above, and the canonical title rows (§2.9) mean the report cannot split one role
-across spellings. No such report is in scope yet.
+across spellings. No such report is in scope yet; the head count above is the only
+title-based query so far.
 
-## 12. Testing Structure
+## 11. Testing Structure
 
 The workflow that produces these tests is defined in the
 [`README`](../README.md); this section defines what is covered and where.
 
-### 12.1 Cucumber
+### 11.1 Cucumber
 
 Cucumber describes business behaviour.
 
@@ -911,9 +977,9 @@ features/
 ```
 
 ```gherkin
-Scenario: HR corrects a historical salary
+Scenario: HR edits a historical salary
   Given an employee has a salary of 50000 USD effective from 2025-01-01
-  When the HR Manager corrects the salary to 52000 USD
+  When the HR Manager edits the salary to 52000 USD
   Then the salary for 2025-01-01 should be 52000 USD
   And the previous value should remain available in the audit history
 ```
@@ -926,7 +992,7 @@ Scenario: An old salary import is rejected
   And the row should be reported as skipped
 ```
 
-### 12.2 RSpec
+### 11.2 RSpec
 
 RSpec covers:
 
@@ -936,16 +1002,25 @@ RSpec covers:
 - Stale import protection
 - No-op detection
 - PaperTrail behavior
-- Revert behavior
+- Per-record audit grouping
 - CSV row validation
 - Sidekiq job behavior
 - API request behavior
 - Reporting queries
 - Edge cases
+- The authentication boundary: login, the 401s, and the absence of the routes
+  that are not supposed to exist (§9.4)
 
-## 13. Secure Implementation Practices
+Request specs are signed in by default. `spec/support/authentication_helpers.rb`
+attaches the bearer header to every request in an example, and an example that is
+about the *absence* of a token says so with `anonymous_caller!` rather than
+remembering to pass `headers:`. That keeps the boundary described once, in the
+place that defines it, instead of in several hundred near-identical request
+lines.
 
-Authentication and RBAC are out of scope for the initial assessment, but the
+## 12. Secure Implementation Practices
+
+Authentication and RBAC were out of scope for the initial assessment, but the
 implementation still follows secure coding practices:
 
 - Strong parameter / API input validation
@@ -956,5 +1031,21 @@ implementation still follows secure coding practices:
 - No secrets in source control
 - Controlled error responses
 
-Production deployment must add authentication and authorization before exposing
-salary information to real users.
+Since then, authentication has been added at the API boundary (AU-1 … AU-5,
+`REQUIREMENTS.md` §7; `ARCHITECTURE.md` §7.4) and authorization has not:
+
+- `POST /api/v1/auth/login` verifies an email and password with Devise and
+  returns a stateless JWT in the `Authorization: Bearer` response header. The
+  account is created by an operator (`bin/rails auth:create_hr_user`), never by
+  the API, so there is no public sign-up, sign-out, or password-reset endpoint.
+- `authenticate_user!` guards `ApplicationController`, which covers every
+  `api/v1` controller. Unauthenticated requests are answered with the same
+  `{"errors": [...]}` envelope as every other failure (401, `unauthorized`)
+  rather than a redirect, so a client never has to parse an HTML login page.
+- The signing secret comes from `JWT_SECRET`, falling back to the Rails secret key
+  base. It is never committed (`.env.example`, `.kamal/secrets`).
+- Passwords are hashed with bcrypt, at the lower test cost.
+
+Production deployment still needs authorization before exposing salary
+information to real users, and needs token revocation if a leaked token has to
+stop working before it expires.

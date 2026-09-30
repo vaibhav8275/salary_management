@@ -208,23 +208,15 @@ RSpec.describe "Database constraints", type: :schema do
 
   describe "salary_imports" do
     it "rejects a null filename" do
-      row = { s3_object_key: "k", status: 0, total_records: 0, processed_records: 0,
+      row = { status: 0, total_records: 0, processed_records: 0,
               failed_records: 0, created_by: 1 }.merge(timestamps)
 
       expect { insert_row("salary_imports", row.merge(filename: nil)) }
         .to raise_error(ActiveRecord::NotNullViolation)
     end
 
-    it "rejects a null s3_object_key" do
-      row = { filename: "f.csv", status: 0, total_records: 0, processed_records: 0,
-              failed_records: 0, created_by: 1 }.merge(timestamps)
-
-      expect { insert_row("salary_imports", row.merge(s3_object_key: nil)) }
-        .to raise_error(ActiveRecord::NotNullViolation)
-    end
-
     it "rejects a null created_by" do
-      row = { filename: "f.csv", s3_object_key: "k", status: 0, total_records: 0,
+      row = { filename: "f.csv", status: 0, total_records: 0,
               processed_records: 0, failed_records: 0 }.merge(timestamps)
 
       expect { insert_row("salary_imports", row.merge(created_by: nil)) }
@@ -232,7 +224,7 @@ RSpec.describe "Database constraints", type: :schema do
     end
 
     it "defaults the status to pending" do
-      id = insert_row("salary_imports", { filename: "f.csv", s3_object_key: "k", total_records: 0,
+      id = insert_row("salary_imports", { filename: "f.csv", total_records: 0,
                                           processed_records: 0, failed_records: 0, created_by: 1 }.merge(timestamps))
 
       expect(SalaryImport.find(id).status).to eq("pending")

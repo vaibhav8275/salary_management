@@ -157,17 +157,20 @@ application code.
 
 ### 4.5 File storage — AWS S3
 
-Uploaded CSV/Excel files are stored in S3 rather than on application disk, so
-that the API pod and the worker do not need to share a filesystem and the worker
-can read the file asynchronously.
+Uploaded CSV files are stored in S3 rather than on application disk, so that the
+API pod and the worker do not need to share a filesystem and the worker can read
+the file asynchronously. This is Active Storage's own S3 service
+(`config/storage.yml`), not a hand-rolled client: the application does not build
+S3 keys, sign requests, or clean up orphaned objects, and the same code path runs
+against a disk service in test and local environments.
 
-**The import operation owns the file, not the request.** The API uploads the CSV
-to S3 and records its key on the import record. The background job is then handed
-only the import id and resolves the object through the database:
+**The import operation owns the file, not the request.** The CSV is attached to
+the import record, so the database holds the link to it. The background job is
+then handed only the import id and resolves the attachment through the database:
 
 ```text
-S3
- │  s3_object_key
+S3  (Active Storage service)
+ │  has_one_attached :csv_file
  ▼
 SalaryImport  ──import_id──▶  Sidekiq Job  ──updates──▶  SalaryRecord
                                                               │
@@ -363,12 +366,22 @@ retention policy.
 
 ### 7.4 Security
 
-Compensation data is sensitive. The initial assessment scope does not require
-authentication or RBAC, but the architecture should support adding it at the API
-boundary without rework. Before exposing the system to real users, production
-architecture should include:
+Compensation data is sensitive, so the API is closed to unauthenticated callers
+at the boundary. Devise owns the credentials and the account, devise-jwt turns a
+successful sign-in into a stateless token, and Warden's `authenticate_user!` guard
+on `ApplicationController` is the single place a request is checked — so adding an
+endpoint does not add a second place to forget.
 
-- Authentication and authorization
+The parts that are deliberately absent are the parts that need requirements of
+their own: there is no role model, no per-record policy, and no sign-out. Because
+tokens are not revocable, a leaked token stays valid until it expires; that is
+acceptable for an account created by an operator and not for a workforce-wide
+rollout, which is why revocation and roles are named as future work rather than
+half-built here.
+
+Before exposing the system to real users, production architecture should also
+include:
+
 - HTTPS
 - Secret management
 - Database access controls

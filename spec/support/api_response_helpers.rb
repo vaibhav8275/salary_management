@@ -3,7 +3,7 @@ require "json"
 # JSON response helpers shared by RSpec request specs and Cucumber step
 # definitions, so both suites read the API the same way.
 #
-# The envelope below is the *assumed* contract. LLD §10 states that "exact
+# The envelope below is the *assumed* contract. LLD §9 states that "exact
 # naming and response contracts are finalized during implementation", so the
 # assumption is isolated in this one file: if the real response shape differs,
 # only these accessors need to change.
