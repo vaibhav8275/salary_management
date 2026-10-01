@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -30,7 +30,7 @@ jobs:
       RUBOCOP_CACHE_ROOT: tmp/rubocop
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -38,7 +38,7 @@ jobs:
           bundler-cache: true
 
       - name: Prepare RuboCop cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         env:
           DEPENDENCIES_HASH: ${{ hashFiles('.ruby-version', '**/.rubocop.yml', '**/.rubocop_todo.yml', 'Gemfile.lock') }}
         with:
@@ -79,6 +79,11 @@ jobs:
 
     env:
       RAILS_ENV: test
+      # Required, not decorative. config/database.yml leaves `host` nil when
+      # DATABASE_HOST is unset, which makes the pg gem use a Unix domain socket
+      # -- and the runner has no socket for the service container, so the suite
+      # died in `db:test:prepare` with "connection to server on socket ...
+      # failed: No such file or directory". The container is reachable over TCP.
       DATABASE_HOST: 127.0.0.1
       DATABASE_PORT: 5432
       # Overridden below; Rails reads these in preference to the defaults.
@@ -92,7 +97,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -118,7 +123,7 @@ jobs:
       # fails on a regression instead of printing a number nobody reads. The
       # threshold lives in .simplecov so there is one place to change it.
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage/index.html
