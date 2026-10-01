@@ -88,7 +88,7 @@ group :development, :test do
   #
   # Drop this as soon as json-schema stops passing `quirks_mode`, so the
   # application can move to json 3.x.
-  gem "json", "~> 2.21"
+  gem "json", "~> 3.0"
 end
 gem "faker", "~> 3.8"
 gem "rspec-rails", "~> 8.0"
