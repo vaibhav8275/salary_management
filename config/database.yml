@@ -26,6 +26,21 @@ default: &default
   # below overrides all of this with no fallback, and fails loudly.
   username: <%= ENV["SALARY_MANAGEMENT_DATABASE_USERNAME"].presence || "admin" %>
   password: <%= ENV["SALARY_MANAGEMENT_DATABASE_PASSWORD"].presence || "admin" %>
+  # Where the server is, when it is not the local machine. Left nil on purpose:
+  # the pg gem omits `host` entirely then, so libpq falls back to the Unix
+  # domain socket, which is what a stock local Postgres offers and what the
+  # blank fallbacks above assume.
+  #
+  # This has to be configurable, because CI is the case where it cannot be
+  # implicit. The Postgres there runs in a service container reachable only over
+  # TCP, while the runner's filesystem has no socket for it -- so an unset host
+  # does not silently fall back to localhost, it fails with
+  # `connection to server on socket ... failed: No such file or directory`.
+  # `.presence` so a blank `KEY=` from dotenv behaves like an absent one, the
+  # same reason the fallbacks above are written this way.
+  host: <%= ENV["DATABASE_HOST"].presence %>
+  # Optional, and nil needs no guard: the pg gem then uses its own 5432 default.
+  port: <%= ENV["DATABASE_PORT"].presence&.to_i %>
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
