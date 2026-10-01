@@ -228,10 +228,11 @@ The implementation must use:
 - Backend: Ruby on Rails API, PostgreSQL, RSpec, Cucumber, PaperTrail, Sidekiq,
   RuboCop, Brakeman, `rack-cors`.
 - Frontend: Next.js, TypeScript, and a component library.
-- Deployment: containerized application on AWS EKS with automated CI/CD, using
-  S3, EKS, EC2 and RDS. Uploaded CSV/Excel files are stored in AWS S3. Redis
-  holds the Sidekiq job queues and the reference data cache; it introduces no
-  service that is not already required.
+  - Deployment: containerized application deployed with Kamal to a single EC2
+    instance reached over an Elastic IP, using RDS for PostgreSQL and S3 for
+    uploaded CSV/Excel files. Images are pushed to ECR. Redis runs as a container
+    on the same instance, holding the Sidekiq job queues and the reference data
+    cache.
 - Structure: a monolith. Microservices and distributed architecture are
   deliberately avoided because the stated requirement and dataset size do not
   justify their complexity.
@@ -328,7 +329,7 @@ requirements of their own rather than an assumption baked into the code.
 12. Provide a responsive UI
 13. Pass automated tests
 14. Pass static quality/security checks
-16. Deploy successfully to AWS EKS
+16. Deploy successfully to the EC2 instance
 
 ## 9. Related Documents
 

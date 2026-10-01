@@ -10,12 +10,21 @@ CSV, and understand pay through reporting and queries.
 
 ## Project Status
 
-Documentation-first. Requirements, architecture and low-level design are written
-and agreed. No application code has been written yet.
+Built and deployed. The Rails API and Next.js frontend both run on a single EC2
+instance; the database is seeded with 10,000 employees.
 
-Development is incremental and follows a developer-led, AI-assisted TDD/BDD
-workflow: business behaviour is captured as Cucumber/Gherkin scenarios first,
-followed by automated tests, then implementation.
+| | |
+| --- | --- |
+| Backend | Rails 8 API, deployed with Kamal |
+| Frontend | Next.js, separate repository |
+| Database | PostgreSQL on RDS, 10,000 employees seeded |
+| Suite | 506 RSpec examples + 77 Cucumber scenarios, all passing |
+| Storage | S3 for uploaded CSVs; Redis for job queues and reference-data cache |
+| Health | `GET /up` → 200 |
+
+Development followed a developer-led, AI-assisted TDD/BDD workflow: business
+behaviour was captured as Cucumber/Gherkin scenarios first, then automated tests,
+then implementation.
 
 ## Documentation
 
@@ -24,6 +33,7 @@ followed by automated tests, then implementation.
 | [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | What the system must do: scope, business rules, data requirements, constraints, assumptions, exclusions, success criteria |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The shape of the solution: architectural style, components, domain boundaries, cross-cutting strategy, deployment topology, tradeoffs |
 | [`docs/LLD.md`](docs/LLD.md)                   | How it is built: entities and fields, constraints, indexes, salary and import rules, services, API surface, test structure |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)     | How it reaches a server: deployment topology, roles, secrets and IAM, first deploy, verification, backup posture, day-two operations |
 
 How to read the set:
 
@@ -53,16 +63,16 @@ How to read the set:
 
 **Frontend**
 
-- Next.js
+- Next.js (App Router)
 - TypeScript
-- Component library
+- Tailwind CSS, with in-repo components in `src/components`
 
 **Delivery**
 
 - Git / GitHub with meaningful incremental commits
 - Automated CI checks
 - Docker where useful for local development
-- Containerized deployment to AWS EKS
+- Containerized deployment to EC2 with Kamal
 - AI-assisted development using project-specific instructions
 - Next.js DevTools MCP for frontend development where appropriate
 
@@ -171,12 +181,6 @@ Next.js frontend
      ↓
 10,000 employee seed data
      ↓
-Integration testing
-     ↓
-Performance refinement
-     ↓
-CI/CD
-     ↓
 Deployment
 ```
 
@@ -199,3 +203,23 @@ The repository is expected to contain requirements, architecture, LLD, Cucumber
 specifications, automated tests, design tradeoffs, performance considerations,
 deployment documentation, and Git history plus AI prompts showing incremental
 development.
+
+### Deployment
+
+The backend deploys with a destination, so its proxy service is registered as
+`salary_management-web-production`:
+
+```bash
+kamal deploy -d production
+```
+
+The frontend is a separate repository and deploys without one:
+
+```bash
+kamal deploy
+```
+
+Adding a destination to an app that had none registers a *second* proxy service
+rather than renaming the first, and two catch-alls on one host fail with
+`host settings conflict with another service`. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) §4 before changing this.
