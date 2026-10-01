@@ -5,6 +5,7 @@
 # files.
 
 
+require_relative '../../spec/coverage_helper'
 require 'cucumber/rails'
 
 # By default, any exception happening in your Rails application will bubble up

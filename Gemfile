@@ -64,6 +64,9 @@ group :development, :test do
   # Test data for RSpec and Cucumber (LLD §12)
   gem "factory_bot_rails", "~> 6.5"
 
+  # Coverage measurement for the suite (LLD §11).
+  gem "simplecov", "~> 0.22", require: false
+
   gem "rswag-api", "~> 2.17"
   gem "rswag-ui", "~> 2.17"
   gem "rswag-specs", "~> 2.17"

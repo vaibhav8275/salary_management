@@ -102,11 +102,27 @@ jobs:
       - name: Create the database and load the schema
         run: bin/rails db:test:prepare
 
+      # Both suites write into one merged resultset, so the floor is judged on
+      # what the two of them reach together rather than on either alone. Cucumber
+      # runs first because SimpleCov's default merge window is 600s; the reverse
+      # order is equally correct, but this way the standalone Cucumber number is
+      # in the log before RSpec reports the merged total.
+      - name: Run Cucumber
+        run: bundle exec cucumber --format progress --publish-quiet
+
       - name: Run RSpec
         run: bundle exec rspec --format progress
 
-      - name: Run Cucumber
-        run: bundle exec cucumber --format progress --publish-quiet
+      # No separate coverage step: SimpleCov exits non-zero from the runs above
+      # when the merged total falls under the floor in .simplecov, so the build
+      # fails on a regression instead of printing a number nobody reads. The
+      # threshold lives in .simplecov so there is one place to change it.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/index.html
+          retention-days: 7
 
       # Catches the class of regression that a green suite misses: a model or
       # migration that is valid but eager-loads to a constant that does not

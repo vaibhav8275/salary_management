@@ -13,6 +13,10 @@
 # it.
 #
 # See https://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
+# Started before anything loads the application. See spec/coverage_helper.rb for
+# why this cannot live in rails_helper.
+require_relative "coverage_helper"
+
 RSpec.configure do |config|
   # rspec-expectations config goes here. You can use an alternate
   # assertion/expectation library such as wrong or the stdlib/minitest
