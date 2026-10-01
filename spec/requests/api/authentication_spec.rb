@@ -185,8 +185,8 @@ RSpec.describe "API authentication", type: :request do
 
       get "/up"
 
-      # A load balancer has no credentials to send, so the health check is
-      # deliberately outside the authenticated surface.
+      # The health check has no credentials to send, so it is deliberately
+      # outside the authenticated surface.
       expect(response).to have_http_status(:ok)
     end
   end

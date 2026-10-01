@@ -14,4 +14,20 @@
 # and no secret is committed.
 Devise.jwt do |config|
   config.secret = ENV["JWT_SECRET"].presence || Rails.application.secret_key_base
+
+  # How long a signed token stays usable, in seconds.
+  #
+  # Left unset this is warden-jwt_auth's default of 3600 (an hour), which is
+  # set deliberately here rather than inherited so that the value is visible in
+  # one place and can be moved without reading gem source.
+  #
+  # The window is a security tradeoff with a usability cost on the other side:
+  # there is no refresh token and no logout route, so an expired token cannot be
+  # renewed at all. When the window closes, the only way back in is to sign in
+  # again, and the user sees the login page rather than a half-broken dashboard.
+  # That is the correct failure for an HR app holding salary data — a session
+  # that lapses while someone walks away from their desk is the point — but it
+  # does mean a 30-minute session cannot survive an interview demo that runs
+  # longer than that without a re-login.
+  config.expiration_time = 30.minutes.to_i
 end

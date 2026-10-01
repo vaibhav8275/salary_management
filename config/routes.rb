@@ -12,9 +12,9 @@ Rails.application.routes.draw do
   end
 
   # External health check (kept from the Rails 8 default scaffold). Reachable
-  # without a token on purpose: a load balancer or uptime check has no way to
-  # authenticate, and it lives in `Rails::HealthController`, which does not
-  # inherit from `ApplicationController`.
+  # without a token on purpose: the check has no credentials to send, and it lives
+  # in `Rails::HealthController`, which does not inherit from
+  # `ApplicationController`.
   get "up" => "rails/health#show", as: :rails_health_check
 
   # Authentication (LLD §9.4). `skip: :all` declares the Devise mapping without
