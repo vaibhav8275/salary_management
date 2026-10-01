@@ -131,6 +131,70 @@ RSpec.describe "Salary imports", type: :request do
 
         expect(api_errors.first["message"]).to match(/csv/i)
       end
+
+      # The report a browser showed for this was a minified React error, because
+      # Next rejects an oversized action body before the request reaches Rails and
+      # has no validation message to send back. The size rules live in the model
+      # and the transport limit is raised to clear them, so what is left here is
+      # the reason the user should be shown.
+      describe "the message the client is shown" do
+        it "names the problem for a PDF" do
+          post "/api/v1/salary-imports", params: { file: csv_upload("%PDF-1.7", filename: "salaries.pdf", content_type: "application/pdf") }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(api_errors.first["message"]).to eq("File must be a CSV file")
+        end
+
+        it "says it once for a PDF rather than once per failed check" do
+          post "/api/v1/salary-imports", params: { file: csv_upload("%PDF-1.7", filename: "salaries.pdf", content_type: "application/pdf") }
+
+          expect(api_errors.first["message"].scan(/must be a CSV file/).size).to eq(1)
+        end
+
+        it "names the problem for a file over 2 MB" do
+          post "/api/v1/salary-imports", params: { file: csv_upload("a" * (SalaryImport::MAX_FILE_SIZE + 1)) }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(api_errors.first["message"]).to eq("File size must be 2 MB or smaller")
+        end
+      end
+
+      describe "the daily upload limit" do
+        # Exhausting the allowance through 2 MB uploads would mean thirty requests
+        # a day; stubbing the total isolates the limit from the per-file rule.
+        before { allow(SalaryImport).to receive(:uploaded_bytes_today).and_return(SalaryImport::DAILY_UPLOAD_LIMIT) }
+
+        it "rejects an upload that would cross it" do
+          post "/api/v1/salary-imports", params: { file: csv_upload(valid_csv) }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(api_errors.first["message"]).to eq("File exceeds your daily upload limit of 60 MB")
+        end
+
+        it "stores nothing when it rejects" do
+          post "/api/v1/salary-imports", params: { file: csv_upload(valid_csv) }
+
+          expect(SalaryImport.count).to eq(0)
+          expect(ActiveStorage::Blob.count).to eq(0)
+        end
+
+        it "does not enqueue the job" do
+          post "/api/v1/salary-imports", params: { file: csv_upload(valid_csv) }
+
+          expect(jobs_for("SalaryImportJob")).to be_empty
+        end
+
+        it "is the uploader's own allowance, not a global one" do
+          allow(SalaryImport).to receive(:uploaded_bytes_today).and_return(0)
+          other = create(:user)
+
+          post "/api/v1/salary-imports", params: { file: csv_upload(valid_csv) }
+
+          expect(response).to have_http_status(:created)
+          expect(SalaryImport.last.created_by).to eq(hr_manager.id)
+          expect(other.id).not_to eq(hr_manager.id)
+        end
+      end
     end
   end
 

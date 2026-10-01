@@ -5,6 +5,39 @@ class SalaryImport < ApplicationRecord
   # attempt to exhaust the worker's memory.
   MAX_FILE_SIZE = 2.megabytes
 
+  # Ceiling on the bytes one user may store in a day. At the per-file limit above
+  # this is thirty uploads, which is generous for a 10,000-employee dataset and
+  # still bounds what one account can push through the queue and onto disk.
+  DAILY_UPLOAD_LIMIT = 60.megabytes
+
+  # Quota days are cut in IST, not UTC. The application runs in UTC, so this
+  # constant is the only place the offset lives — without it the allowance would
+  # reset at 05:30 IST, which is not a day boundary anyone thinks in.
+  DAILY_UPLOAD_TIME_ZONE = ActiveSupport::TimeZone["Asia/Kolkata"]
+
+  # The attribute is `csv_file` but the person reading the sentence is looking at
+  # a file picker, so "Csv file must be a CSV file" is replaced with "File must
+  # be a CSV file". Every message below reads through this.
+  def self.human_attribute_name(attribute, options = {})
+    return "File" if attribute.to_s == "csv_file"
+
+    super
+  end
+
+  # Bytes this user has already stored today, counted in IST.
+  #
+  # Summed from the stored blobs rather than kept as a running counter, so the
+  # figure cannot drift from the files actually on disk and nothing has to be
+  # reset at midnight. A rejected upload leaves neither an import row nor a blob,
+  # so it costs the user nothing — picking the wrong file is not penalised.
+  def self.uploaded_bytes_today(user_id, now: Time.current)
+    window_start = DAILY_UPLOAD_TIME_ZONE.at(now).beginning_of_day
+
+    joins(csv_file_attachment: :blob)
+      .where(created_by: user_id, created_at: window_start...(window_start + 1.day))
+      .sum(Arel.sql("active_storage_blobs.byte_size"))
+  end
+
   # What a client may claim the file is. The extension below is the real test;
   # this list exists because the same CSV is labelled `text/csv` by curl and
   # `application/vnd.ms-excel` by older Excel and by some browsers, and rejecting
@@ -51,6 +84,12 @@ class SalaryImport < ApplicationRecord
   validate :csv_file_size
   validate :csv_file_type
 
+  # `on: :create` for the same reason as the presence check above: the quota is
+  # spent at upload time. Re-saving an import to record its outcome must not
+  # re-validate the day's bytes, or the worker could not finish an import that
+  # was legitimately accepted when the day's allowance was still there.
+  validate :within_daily_upload_limit, on: :create
+
   # The CSV as text, for the worker.
   #
   # `download` is used rather than `blob.open` because the job parses the whole
@@ -65,17 +104,41 @@ class SalaryImport < ApplicationRecord
   def csv_file_size
     return unless csv_file.attached?
 
-    errors.add(:csv_file, "must be smaller than #{MAX_FILE_SIZE / 1.megabyte} MB") if csv_file.byte_size > MAX_FILE_SIZE
+    return if csv_file.byte_size <= MAX_FILE_SIZE
+
+    errors.add(:csv_file, "size must be #{MAX_FILE_SIZE / 1.megabyte} MB or smaller")
   end
 
+  # A PDF is both the wrong extension and the wrong content type, and reporting
+  # both reads as "File must be a CSV file File must have a .csv extension". The
+  # extension is the stronger statement, so it answers alone and the content type
+  # is only consulted once the name has already passed.
+  #
+  # The wording here is the wording `rejectionFor` uses in the browser, so a file
+  # the client refuses and one the model refuses read the same to the user.
   def csv_file_type
     return unless csv_file.attached?
 
     unless csv_file.filename.extension_without_delimiter.casecmp("csv").zero?
-      errors.add(:csv_file, "must have a .csv extension")
+      errors.add(:csv_file, "must be a CSV file")
+      return
     end
 
     content_type = csv_file.content_type.to_s.split(";").first.to_s.strip
     errors.add(:csv_file, "must be a CSV file") if content_type.present? && !CSV_CONTENT_TYPES.include?(content_type)
+  end
+
+  # The day's allowance, counted against what this user has already stored plus
+  # the file now waiting to be saved. Checking the projection rather than the
+  # balance means a file that would cross the line is refused instead of being
+  # stored and refused afterwards.
+  def within_daily_upload_limit
+    return unless csv_file.attached?
+    return if created_by.blank?
+
+    projected = self.class.uploaded_bytes_today(created_by) + csv_file.byte_size
+    return if projected <= DAILY_UPLOAD_LIMIT
+
+    errors.add(:csv_file, "exceeds your daily upload limit of #{DAILY_UPLOAD_LIMIT / 1.megabyte} MB")
   end
 end
