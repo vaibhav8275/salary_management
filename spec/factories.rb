@@ -96,7 +96,10 @@ FactoryBot.define do
     total_records { 0 }
     processed_records { 0 }
     failed_records { 0 }
-    created_by { 42 }
+    # `created_by` is a NOT NULL foreign key to users, so the default has to point
+    # at a real account rather than a bare number. An example that cares about the
+    # uploader passes `created_by:` explicitly.
+    created_by { create(:user).id }
     started_at { nil }
 
     transient do

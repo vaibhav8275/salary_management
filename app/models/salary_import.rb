@@ -62,11 +62,11 @@ class SalaryImport < ApplicationRecord
 
   has_many :salary_import_errors, dependent: :destroy
 
-  # `created_by` is a plain bigint with no foreign key, so the association is
-  # declared here rather than inferred. It is optional because the column is
-  # populated by the controller, not by devise: an import can outlive the account
-  # that uploaded it, and a detail page must not 500 on a missing uploader.
-  belongs_to :uploader, class_name: "User", foreign_key: :created_by, optional: true
+  # `created_by` is the foreign key to the uploading account. It is required:
+  # the column is NOT NULL and the database enforces the reference, so an import
+  # cannot exist without an uploader. The controller sets it from the
+  # authenticated user at creation time.
+  belongs_to :uploader, class_name: "User", foreign_key: :created_by
 
   # The uploaded CSV is the import's only input, so it belongs to the record
   # rather than beside it: Active Storage stores the file and the metadata, and

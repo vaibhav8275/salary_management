@@ -210,9 +210,9 @@ RSpec.configure do |config|
               total_records:     { type: :integer, example: 200 },
               processed_records: { type: :integer, example: 198 },
               failed_records:    { type: :integer, example: 2 },
-              # The uploader's email, not the raw created_by id: null when the
-              # account behind the import no longer exists.
-              created_by:        { type: :string,  example: "hr.manager1@example.com", nullable: true },
+              # The uploader's email, not the raw created_by id. `created_by` is a
+              # required foreign key, so this is always present.
+              created_by:        { type: :string,  example: "hr.manager1@example.com" },
               created_at:        { type: :string,  format: "date-time" }
             },
             required: %w[id filename status total_records processed_records failed_records]

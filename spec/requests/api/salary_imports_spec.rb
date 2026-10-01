@@ -256,14 +256,6 @@ RSpec.describe "Salary imports", type: :request do
 
       expect(api_data.first["created_by"]).to eq(uploader.email)
     end
-
-    it "returns a null uploader when the account is gone" do
-      create(:salary_import, created_by: 99_999)
-
-      get "/api/v1/salary-imports"
-
-      expect(api_data.first["created_by"]).to be_nil
-    end
   end
 
   describe "GET /api/v1/salary-imports/:id" do

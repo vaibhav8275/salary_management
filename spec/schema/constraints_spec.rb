@@ -207,9 +207,14 @@ RSpec.describe "Database constraints", type: :schema do
   end
 
   describe "salary_imports" do
+    # `created_by` is a NOT NULL foreign key to users, so a valid raw row needs a
+    # real account. The factory users created by other examples are not a reliable
+    # id here, so this one is created explicitly.
+    let(:uploader) { create(:user) }
+
     it "rejects a null filename" do
       row = { status: 0, total_records: 0, processed_records: 0,
-              failed_records: 0, created_by: 1 }.merge(timestamps)
+              failed_records: 0, created_by: uploader.id }.merge(timestamps)
 
       expect { insert_row("salary_imports", row.merge(filename: nil)) }
         .to raise_error(ActiveRecord::NotNullViolation)
@@ -223,9 +228,24 @@ RSpec.describe "Database constraints", type: :schema do
         .to raise_error(ActiveRecord::NotNullViolation)
     end
 
+    it "rejects a created_by that does not exist" do
+      row = { filename: "f.csv", status: 0, total_records: 0,
+              processed_records: 0, failed_records: 0, created_by: 0 }.merge(timestamps)
+
+      expect { insert_row("salary_imports", row) }
+        .to raise_error(ActiveRecord::InvalidForeignKey)
+    end
+
+    it "prevents deleting an uploader that still has imports" do
+      import = create(:salary_import)
+
+      expect { import.uploader.destroy }
+        .to raise_error(ActiveRecord::InvalidForeignKey)
+    end
+
     it "defaults the status to pending" do
       id = insert_row("salary_imports", { filename: "f.csv", total_records: 0,
-                                          processed_records: 0, failed_records: 0, created_by: 1 }.merge(timestamps))
+                                          processed_records: 0, failed_records: 0, created_by: uploader.id }.merge(timestamps))
 
       expect(SalaryImport.find(id).status).to eq("pending")
     end

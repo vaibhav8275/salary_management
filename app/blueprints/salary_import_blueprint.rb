@@ -7,7 +7,7 @@ class SalaryImportBlueprint < Blueprinter::Base
   # internal key with no meaning to a reader, and the list is the only place the
   # person who ran an import is recorded.
   field :created_by do |import|
-    import.uploader&.email
+    import.uploader.email
   end
 
   field :created_at do |import|

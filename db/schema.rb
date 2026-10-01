@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_120001) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -162,6 +162,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120001) do
   add_foreign_key "employees", "job_titles"
   add_foreign_key "salary_import_errors", "employees"
   add_foreign_key "salary_import_errors", "salary_imports"
+  add_foreign_key "salary_imports", "users", column: "created_by"
   add_foreign_key "salary_records", "employees"
   add_foreign_key "versions", "salary_imports", on_delete: :nullify
 end
