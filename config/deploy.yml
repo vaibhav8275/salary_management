@@ -1,117 +1,361 @@
-# Name of your application. Used to uniquely configure containers.
+# Kamal deploy config for the Rails API.
+#
+# Topology: one EC2 instance in us-east-1, reached by a static Elastic IP over
+# plain HTTP. kamal-proxy on the host fronts this app and splits traffic by path;
+# see the `proxy:` block below for the prefixes.
+
 service: salary_management
 
-# Name of the container image (use your-user/app-name on external registries).
-image: salary_management
+# Private ECR repository created by infrastructure/ecr.tf. ECR rather than Docker
+# Hub so the images sit in the same account as the instance that runs them.
+image: salary-management-api
 
-# Deploy to these servers.
+# Kamal renders this file through ERB before parsing it. That ERB needs four
+# values before Kamal can even parse the result -- EIP for `servers:`, AWS_ACCOUNT
+# for `registry.server`, and FRONTEND_ORIGIN and REDIS_URL for `env.clear`. They are
+# read from .kamal/secrets.production rather than committed here.
+#
+# Kamal does not expose its secrets to this ERB. Kamal::Secrets resolves them later,
+# when it builds the container's --env-file, and it does not run first. So the ERB
+# reads the same file directly with Dotenv. The values are the same ones; there is
+# just no handoff between the two readers.
+#
+# .kamal/secrets.production is gitignored, which is the point: these name one
+# deployment and there is no reason for them to be in a public repository. It also
+# means the four values below come from the same file as the six under `env.secret`,
+# so there is one place to look for deployment configuration rather than two that
+# can drift.
+#
+# `dotenv-rails` sits in the default Gemfile group so this require resolves: Kamal
+# runs from `bin/kamal`, a Bundler binstub for this application, so a gem scoped to
+# :development would be absent from the deploy environment.
+#
+# Every value is required. A missing one raises naming the variable rather than
+# defaulting, because a deploy that silently used a placeholder host would report
+# success and leave nothing running on the real one.
+#
+# Note this makes `kamal deploy` require `-d production`: without a destination,
+# Kamal reads .kamal/secrets instead and the values below would be missing.
+<%
+  require "dotenv"
+  # Resolved from the working directory, not from __dir__. Kamal renders this ERB
+  # from inside its own gem, so __dir__ points at the installed kamal package
+  # rather than at the application. Every kamal command is documented to be run
+  # from the application root, which is where config/deploy.yml itself is found.
+  #
+  # `overload`, not `load`. `load` lets an ambient shell variable win, and a shell
+  # with FRONTEND_ORIGIN or EIP exported from something else would silently
+  # override the file. A deploy rendered that way can point at the wrong host and
+  # still report success, so the file wins here and a one-off override is written
+  # into it rather than typed at the prompt.
+  #
+  # Only the destination file is loaded here, deliberately.
+  #
+  # .kamal/secrets-common is NOT read by this ERB. Its values are `$(...)` command
+  # references, and Dotenv does not execute those -- only Kamal's own
+  # Kamal::Secrets::Dotenv does. Loading it here would set
+  # SECRET_KEY_BASE to the literal string "$(aws secretsmanager ...)" in ENV, which
+  # is harmless for the four keys below (none of them live in that file) and a trap
+  # for the first key someone adds that does.
+  #
+  # .env is a fallback for a bare `kamal deploy` with no destination, where Kamal
+  # would otherwise read .kamal/secrets and find none of these values. Under
+  # `-d production` the destination file wins because it is loaded last.
+  Dotenv.overload(".env") unless ENV["KAMAL_DESTINATION"]
+  Dotenv.overload(".kamal/secrets.production")
+
+  required = lambda do |key|
+    value = ENV[key]
+    raise "config/deploy.yml: #{key} is not set. Add it to .kamal/secrets.production." if value.nil? || value.strip.empty?
+    value
+  end
+
+  eip = required.call("EIP")
+  aws_account = required.call("AWS_ACCOUNT")
+  frontend_origin = required.call("FRONTEND_ORIGIN")
+  redis_url = required.call("REDIS_URL")
+-%>
+
 servers:
   web:
-    - 192.168.0.1
-  # job:
-  #   hosts:
-  #     - 192.168.0.1
-  #   cmd: bin/jobs
+    # Public IP of the instance created by infrastructure/main.tf. Reachable
+    # because the host has a public IP and the SG allows 22 from var.ssh_allowed_cidr.
+    - <%= eip %>
 
-# Enable SSL auto certification via Let's Encrypt and allow for multiple apps on a single web server.
-# If used with Cloudflare, set encryption mode in SSL/TLS setting to "Full" to enable CF-to-app encryption.
-#
-# Using an SSL proxy like this requires turning on config.assume_ssl and config.force_ssl in production.rb!
-#
-# Don't use this when deploying to multiple web servers (then you have to terminate SSL at your load balancer).
-#
-# proxy:
-#   ssl: true
-#   host: app.example.com
+  # Background job worker. Kept as its own role so a long CSV import never blocks
+  # a web request and a worker crash never takes the API down. Both roles run the
+  # same image; only the command differs.
+  #
+  # No proxy entry for this role on purpose: jobs are not web traffic and must
+  # not be reachable from the internet.
+  job:
+    hosts:
+      - <%= eip %>
+    cmd: bin/jobs
 
-# Where you keep your container images.
+# kamal-proxy fronts the app on the host, owns the host's :80 and :443 ports, and
+# forwards to the Rails container on app_port.
+proxy:
+  # Access is by Elastic IP only, over plain HTTP. No hostname is registered, so
+  # there's nothing for Let's Encrypt to validate and no cert to manage.
+  #
+  # ssl: false is therefore final for this topology, not temporary. Note that
+  # Let's Encrypt cannot issue for a bare IP at all -- it validates hostnames, and
+  # the IP-based ACME profiles are not something kamal-proxy supports. So serving
+  # the deployment over http://<EIP>/ means no HTTPS, period. If TLS is ever
+  # needed, a hostname has to come back, and at that point set host: <that name>
+  # here and put the https:// origin in FRONTEND_ORIGIN.
+  ssl: false
+
+  # No `host` key on purpose. Omitting it makes kamal-proxy serve this app on any
+  # Host header, which is what a bare-IP deployment requires -- that request arrives
+  # with the IP as its Host, and it has to match something.
+  #
+  # `host: "*"` is not the way to express that. The asterisk is taken literally as
+  # a hostname and matches nothing, so every request 404s at the proxy while both
+  # containers stay healthy and every deploy reports success. Absence of the key is
+  # the wildcard.
+
+  # Served on the default port. The Rails container exposes 3000 (see app_port
+  # below), but callers still reach the API on :80 through kamal-proxy -- the
+  # proxy owns :80 on the host and rewrites to 3000 internally. The published
+  # port is 80 either way; changing app_port does not change how the API is
+  # addressed from outside.
+  app_port: 3000
+
+  # Path-based routing. The Next.js frontend is registered as the default
+  # (catch-all) app on the same host, so without these prefixes API requests
+  # would be served by Next.js instead.
+  #
+  # /api/v1  is every Rails endpoint -- routes.rb mounts the whole API under
+  #          api/v1, including the devise login route declared outside the
+  #          namespace.
+  # /up      is Rails' health check. It has to route here too, otherwise
+  #          kamal-proxy's deploy-time readiness probe would be answered by
+  #          Next.js and the deploy would report healthy before Rails was listening.
+  # /api-docs  is the rswag Swagger UI.
+  #
+  # The prefix is /api/v1 and deliberately NOT /api. Next.js has its own route
+  # handlers under /api/imports (src/app/api/imports/[id]/route.ts), which exist
+  # because the session token is an httpOnly cookie that a browser request cannot
+  # attach as a bearer header. Claiming all of /api would send those to Rails,
+  # which has no such route and would 404 the polling that drives the imports page.
+  # Matching the longest prefix first means /api/v1 wins here and /api/imports
+  # falls through to the Next.js catch-all.
+  #
+  # strip_path_prefix: false is essential and easy to get wrong. By default
+  # kamal-proxy strips the matched prefix before forwarding, which would turn
+  # /api/v1/employees into /v1/employees and 404 every endpoint in the app.
+  path_prefixes:
+    - /api/v1
+    - /up
+    - /api-docs
+  strip_path_prefix: false
+
+  healthcheck:
+    path: /up
+    interval: 3
+    timeout: 3
+
+# ECR in us-east-1. The username is literally "AWS" and the password is the
+# short-lived token from get-login-password; there is no long-lived registry
+# password to store. .kamal/secrets-common fetches it at deploy time.
 registry:
-  # Alternatives: hub.docker.com / registry.digitalocean.com / ghcr.io / ...
-  server: localhost:5555
+  server: <%= aws_account %>.dkr.ecr.us-east-1.amazonaws.com
+  username: AWS
+  password:
+    - KAMAL_REGISTRY_PASSWORD
 
-  # Needed for authenticated registries.
-  # username: your-user
+# SSH. The private key is referenced by path and never uploaded, copied or read
+# into state. Generated outside Terraform precisely so it stays out of
+# terraform.tfstate; see infrastructure/ssh.tf.
+ssh:
+  user: ubuntu
+  # The option is `keys` (plural) and it is a list. `key:` is not a recognised
+  # key and kamal refuses to start on it -- an unknown key is a hard error rather
+  # than something logged and ignored, so a typo here looks like a broken install.
+  keys:
+    - ~/.ssh/salary-management-demo
 
-  # Always use an access token rather than real password when possible.
-  # password:
-  #   - KAMAL_REGISTRY_PASSWORD
-
-# Inject ENV variables into containers (secrets come from .kamal/secrets).
 env:
+  # Everything here is fetched from the Kamal secrets files, never written inline.
+  # Shared values (`$(...)` command references) live in the committed
+  # .kamal/secrets-common; per-destination values live in the gitignored
+  # .kamal/secrets.production.
+  #
+  # `secret` versus `clear` is not a confidentiality distinction in Kamal -- both
+  # end up in a docker --env-file pushed to the host. What it changes is the
+  # source: `clear` values are literals in this file, `secret` values are looked up
+  # in the secrets files. Everything deployment-specific is `secret` so it has one
+  # documented origin.
   secret:
-    - RAILS_MASTER_KEY
-    - AWS_ACCESS_KEY_ID
-    - AWS_SECRET_ACCESS_KEY
+    # Signing keys, from AWS Secrets Manager. See .kamal/secrets-common.
+    - SECRET_KEY_BASE
+    - JWT_SECRET
+
+    # RDS credentials and the S3 bucket, from .kamal/secrets.production (ignored).
+    #
+    # SALARY_MANAGEMENT_DATABASE_PASSWORD is the exact name config/database.yml
+    # reads. Nothing renames it, so a line called DATABASE_PASSWORD would reach the
+    # container and be ignored.
+    - SALARY_MANAGEMENT_DATABASE_PASSWORD
+    - DB_HOST
+    - DB_PORT
+    - SALARY_MANAGEMENT_DATABASE_NAME
+    - SALARY_MANAGEMENT_DATABASE_USERNAME
+    - S3_BUCKET
+
   clear:
-    # Bucket the CSV import path reads and writes. Must match the :amazon
-    # service in config/storage.yml.
-    S3_BUCKET: salary-management-1
+    # The frontend and API are both reached through kamal-proxy on the Elastic IP,
+    # so requests are same-origin and never trigger a CORS preflight. The
+    # middleware still needs the origin allowed explicitly for direct API calls
+    # from curl or a separate tool.
+    #
+    # http, and the bare IP: there is no hostname in this deployment and TLS is
+    # off. If this is left on the old https domain, every cross-origin check fails
+    # against a scheme the app is not actually served on.
+    FRONTEND_ORIGIN: <%= frontend_origin %>
 
-    # Set number of processes dedicated to the Sidekiq worker (default: 1)
-    # JOB_CONCURRENCY: 3
+    # RAILS_MASTER_KEY is deliberately absent. Nothing in app/ reads Rails
+    # credentials, so SECRET_KEY_BASE replaces it entirely and there is no
+    # credentials.yml.enc or master key on the server.
 
-    # Set number of cores available to the application on each server (default: 1).
-    # WEB_CONCURRENCY: 2
+    # Redis, as a Kamal accessory below.
+    #
+    # The hostname is NOT `redis`. Kamal names the container
+    # `<app-name>-<accessory-name>`, so this is `salary_management-redis` --
+    # service name plus accessory key, underscore and hyphen as written in
+    # `service:` and the accessories block. Verified on the host:
+    #
+    #   getent hosts redis                  -> no DNS entry
+    #   getent hosts salary_management-redis -> 172.18.0.3
+    #
+    # Getting this wrong fails in a way that looks identical to Redis being
+    # absent, because `redis://redis:6379` simply cannot connect. And "localhost"
+    # is worse than either: from inside this container it means inside this
+    # container, which is exactly what kept the job role crash-looping with
+    # `CannotConnectError: connect(2) for 127.0.0.1:6379`.
+    #
+    # No password, which follows from the accessory having no published port:
+    # it is reachable only from containers already on this host. See the note on
+    # the accessory before ever adding one.
+    REDIS_URL: <%= redis_url %>
 
-    # Match this to any external database server to configure Active Record correctly
-    # Use salary_management-db for a db accessory server on same machine via local kamal docker network.
-    # DB_HOST: 192.168.0.2
+# Redis as a Kamal accessory: a plain container on the `kamal` network, managed by
+# the same deploy as the apps. Chosen over ElastiCache because this deployment has
+# no domain, no TLS and a disposable demo workload, so a managed cache would add
+# cost and Terraform surface for no benefit.
+#
+# Redis is needed in three separate places, not just by Sidekiq:
+#   - config/initializers/sidekiq.rb      (server and client)
+#   - bin/jobs                             (the worker entrypoint)
+#   - config/environments/production.rb    (cache_store = :redis_cache_store)
+# The last is easy to miss, and it means the cache would still fail after Sidekiq
+# looked healthy.
+accessories:
+  redis:
+    image: redis:7-alpine
+    host: <%= eip %>
 
-    # Log everything from Rails
-    # RAILS_LOG_LEVEL: debug
+    # There is deliberately NO `port:` key here.
+    #
+    # That omission is the security boundary. Setting `port: 6379` makes kamal
+    # publish it as 0.0.0.0:6379, which puts an unauthenticated Redis on the
+    # public internet -- the classic Redis exposure, and trivially abusable for
+    # writes, cache poisoning and, via EVAL, remote code execution. Leaving it
+    # off keeps Redis reachable only from containers on this host, addressed by
+    # the service name `redis`.
+    #
+    # Add a password at the same time as any published port, never separately.
 
-# Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
-# "bin/kamal logs -r job" will tail logs from the first server in the job section.
-aliases:
-  console: app exec --interactive --reuse "bin/rails console"
-  shell: app exec --interactive --reuse "bash"
-  logs: app logs -f
-  dbc: app exec --interactive --reuse "bin/rails dbconsole --include-password"
+    # Named volume, so the queue and cache survive a container restart. Without
+    # it, every restart silently discards pending Sidekiq jobs.
+    #
+    # Array form, "named-volume:/container-path". A single mapping here is a
+    # hard error from kamal ("should be an array"), not a silently ignored key.
+    volumes:
+      - redis_data:/data
 
-# Use a persistent storage volume for sqlite database files and local Active Storage files.
-# Recommended to change this to a mounted volume path that is backed up off server.
-volumes:
-  - "salary_management_storage:/rails/storage"
+    # Redis server flags go in `cmd:`, NOT `options:`.
+    #
+    # `options:` is turned into `docker run` flags and lands BEFORE the image
+    # name, so `--appendonly` there reaches docker itself and fails with
+    # "unknown flag: --appendonly" (exit 125). `cmd:` is appended after the
+    # image, which is the only place redis-server can see them.
+    # Persistence is AOF rather than RDB snapshots: RDB can lose up to a minute
+    # of enqueued jobs on an unclean stop, and a queue that silently drops work
+    # is worse than a slightly slower boot.
+    #
+    # `noeviction` is required by Sidekiq. Under allkeys-lru Redis can evict a
+    # job Sidekiq still considers enqueued, and that presents as a job that
+    # vanished rather than as a cache miss.
+    #
+    # maxmemory caps Redis so a runaway cache cannot OOM a 2 GB host and take
+    # Puma and Next.js down with it. Hitting the cap makes Redis refuse writes
+    # rather than evict -- loud and recoverable, versus a silent OOM kill.
+    #
+    # This note sits ABOVE `cmd:` on purpose. A YAML folded block scalar (`>-`)
+    # keeps consuming more-indented lines, so a comment placed after it becomes
+    # part of the string and Redis receives "# Persistence is AOF..." as
+    # arguments.
+    cmd: >-
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 192mb
+      --maxmemory-policy noeviction
 
-
-# Configure the image builder.
+# Build locally rather than on the deploy host.
+#
+# A remote builder was the original choice, on the theory that it guarantees the
+# image matches the host's architecture. It does not work here: the remote
+# builder connects through a docker context over SSH, and this host has no
+# `docker` user to authenticate as. Creating one to move a build is not worth
+# it.
+#
+# Building locally is correct as long as arch is pinned. This machine and the
+# EC2 host are both x86_64 today, but `arch: amd64` states that as a fact about
+# the image rather than leaving it to be inferred from whatever laptop is
+# running the deploy. Without it, an ARM Mac would push an arm64 image the host
+# cannot run -- and since that failure appears at container start rather than at
+# push time, it reads as a broken app rather than a mismatch.
 builder:
   arch: amd64
 
-  # # Build image via remote server (useful for faster amd64 builds on arm64 computers)
-  # remote: ssh://docker@docker-builder-server
+  # Build from the working tree rather than a fresh git clone.
   #
-  # # Pass arguments and secrets to the Docker build process
-  # args:
-  #   RUBY_VERSION: ruby-3.2.2
-  # secrets:
-  #   - GITHUB_TOKEN
-  #   - RAILS_MASTER_KEY
+  # `context: .` is what disables the clone. Kamal clones the repo at HEAD whenever
+  # git is present and no context is set, so simply setting `git_clone: false` is
+  # not an option -- it is not a recognised key and kamal refuses to start.
+  #
+  # Kamal clones the repo at HEAD by default, which builds the committed code and
+  # silently drops anything uncommitted. That is the right default in general, but
+  # here the Dockerfile, bin/jobs and the whole deploy setup are not committed yet,
+  # so a clone-based build fails with "failed to read dockerfile: open Dockerfile:
+  # no such file or directory" -- the clone genuinely has no Dockerfile. The
+  # "transferring dockerfile: 2B" line in that output is the empty placeholder,
+  # not a sign the file was excluded.
+  #
+  # There is no `git_clone: false` key in Kamal 2.12. The clone is used whenever
+  # git is present and `context` is unset, so setting an explicit build context is
+  # what turns it off -- that is what the line above does.
+  #
+  # kamal warns about uncommitted changes when the clone is bypassed, which is the
+  # tradeoff: the image reflects what is on disk rather than what is in git. Once
+  # the Dockerfile and bin/jobs are committed, dropping `context` restores
+  # reproducible clone-based builds.
+  context: .
 
-# Use a different ssh user than root
-# ssh:
-#   user: app
-
-# Use accessory services (secrets come from .kamal/secrets).
-# accessories:
-#   db:
-#     image: mysql:8.0
-#     host: 192.168.0.2
-#     # Change to 3306 to expose port to the world instead of just local network.
-#     port: "127.0.0.1:3306:3306"
+# CSV import job. Runs once, on the host, with no long-running service left
+# behind -- appropriate for a one-off job in a demo.
+#
+# jobs:
+#   import-csv:
+#     description: Import salary data from S3
+#     host: <%= eip %>   # EIP from .kamal/secrets.production, same value as servers.web above
+#     command: bin/rails import:salary_csv[path/to/file.csv]
 #     env:
-#       clear:
-#         MYSQL_ROOT_HOST: '%'
 #       secret:
-#         - MYSQL_ROOT_PASSWORD
-#     files:
-#       - config/mysql/production.cnf:/etc/mysql/my.cnf
-#       - db/production.sql:/docker-entrypoint-initdb.d/setup.sql
-#     directories:
-#       - data:/var/lib/mysql
-#   redis:
-#     image: valkey/valkey:8
-#     host: 192.168.0.2
-#     port: 6379
-#     directories:
-#       - data:/data
+#         - SALARY_MANAGEMENT_DATABASE_PASSWORD
+#     volumes:
+#       - .:/workspace

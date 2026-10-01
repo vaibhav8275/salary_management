@@ -32,6 +32,7 @@
 /config/*.key
 
 /config/credentials.yml.enc
+/.kamal/secrets.*
 
 # Must stay last: this re-includes the committed template, so every pattern
 # above that could match it has to come first.

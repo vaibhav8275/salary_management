@@ -96,6 +96,18 @@ test:
 production:
   primary: &primary_production
     <<: *default
+    # The server lives in RDS, not on this container, so production has to be
+    # told where it is: nothing above sets `host`, and the pg gem otherwise
+    # silently defaults to a local socket, which surfaces as a connection error
+    # rather than as a missing setting. Guarded by Rails.env for the same reason
+    # as the credentials below — the whole file is parsed on every boot.
+    # DATABASE_URL is honoured as the escape hatch, because Rails merges it over
+    # this file after the ERB is evaluated; raising unconditionally would make
+    # that path unusable.
+    host: '<%= Rails.env.production? ? (ENV["DB_HOST"].presence || (ENV["DATABASE_URL"].to_s.empty? && raise(KeyError, "DB_HOST is required in production unless DATABASE_URL is set"))) : ENV["DB_HOST"] %>'
+    # Optional, and no guard needed: nil leaves the pg gem on its 5432 default,
+    # which is what a standard RDS instance listens on.
+    port: '<%= ENV["DB_PORT"].presence&.to_i %>'
     # Rails parses the whole file on boot regardless of the current environment,
     # so an unguarded requirement here would abort a development run too. Guarding
     # on Rails.env keeps development on the fallbacks above while still making a

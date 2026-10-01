@@ -11,7 +11,8 @@ Build a maintainable salary management application for approximately 10,000
 employees while keeping the architecture proportional to the problem.
 
 The solution is a **Next.js frontend, a Rails API, a PostgreSQL database and
-Sidekiq background processing**, deployed containerized to AWS EKS.
+Sidekiq background processing**, containerized with Kamal onto a single EC2
+instance.
 
 The design rule applied throughout: measure first, add infrastructure only when a
 requirement demands it.
@@ -158,7 +159,7 @@ application code.
 ### 4.5 File storage — AWS S3
 
 Uploaded CSV files are stored in S3 rather than on application disk, so that the
-API pod and the worker do not need to share a filesystem and the worker can read
+API container and the worker do not need to share a filesystem and the worker can read
 the file asynchronously. This is Active Storage's own S3 service
 (`config/storage.yml`), not a hand-rolled client: the application does not build
 S3 keys, sign requests, or clean up orphaned objects, and the same code path runs
@@ -397,29 +398,32 @@ Implementation-level secure-coding practices are in
 ## 8. Deployment Architecture
 
 ```text
-GitHub
-   ↓
-CI/CD Pipeline
-   ↓
-Container Build
-   ↓
-Container Registry
-   ↓
-AWS EKS
-   ├── Next.js
-   └── Rails API
-        ├── Sidekiq
-        └── Redis ──► PostgreSQL
+Local machine
+     ↓  kamal build / deploy
+ECR
+     ↓
+EC2 instance (Ubuntu 24.04)
+     ├── kamal-proxy :80        path routing, no hostname
+     ├── Next.js web
+     └── Rails API
+          ├── web
+          └── job (bin/jobs)
+               └── redis:7-alpine accessory
+                    ↓                    ↓
+              RDS PostgreSQL        S3 (CSVs)
 ```
 
 The Rails API and Sidekiq share an image; the process role is what differs.
 Uploaded files are held in S3. Redis is the shared state of the two Rails
 processes: Sidekiq's job queues and the reference data cache (§4.6) — one
-stateful service, not two. AWS services used: S3, EKS, EC2, RDS and ElastiCache
-(or an equivalent managed Redis).
+stateful service, not two.
 
-The exact networking, secrets management, ingress and scaling configuration are
-deployment implementation details, not architectural commitments.
+AWS services in use: EC2 (with an Elastic IP), RDS, S3, and ECR as the container
+registry. Redis runs as a container on the same instance rather than a managed
+service. `kamal-proxy` terminates HTTP on :80 and routes by path.
+
+Deployment mechanics, secrets handling and verification gates are in
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## 9. Architectural Principles
 

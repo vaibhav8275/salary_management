@@ -44,13 +44,7 @@ gem "thruster", require: false
 gem "image_processing", "~> 1.2"
 
 group :development, :test do
-  # Loads `.env` in development and test so local secrets (AWS credentials for
-  # the S3 bucket, the database password) can live outside version control.
-  # `.env` is gitignored and `.env.example` is the committed template, so the
-  # repository never holds a real value. Development and test only: production
-  # gets its secrets from `config/deploy.yml` via Kamal, not from a file on disk.
   gem "dotenv-rails", require: false
-
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
 
@@ -92,12 +86,8 @@ group :development, :test do
   # Drop this as soon as json-schema stops passing `quirks_mode`, so the
   # application can move to json 3.x.
   gem "json", "~> 2.21"
-
-  # Synthetic data for `db/seeds.rb` and `script/generate_sample_salary_csv.rb`.
-  # Development and test only — never loaded in production.
-  gem "faker", "~> 3.8"
 end
-
+gem "faker", "~> 3.8"
 gem "rspec-rails", "~> 8.0"
 
 gem "blueprinter", "~> 1.3"

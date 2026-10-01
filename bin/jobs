@@ -1,0 +1,33 @@
+#!/usr/bin/env ruby
+# Boots a Sidekiq worker. Kamal runs this as its own `job` role, separate from
+# the web role:
+#
+#   bin/kamal app boot -r job
+#
+# Keeping them apart matters: a long CSV import should never block an API
+# request, and a crashing worker should never take the API down. Both roles run
+# the same image; only the command differs.
+#
+# Queues and concurrency come from config/sidekiq.yml, which Sidekiq discovers
+# by itself. Redis comes from the environment, injected by Kamal from
+# .kamal/secrets and config/deploy.yml. Nothing is hardcoded, so the same image
+# runs locally and in production.
+
+require_relative "../config/environment"
+
+# Read once and applied to both the server and the client. The web role enqueues
+# and this role dequeues, so both must agree on the queue and the Redis instance
+# or jobs land in a queue nothing is reading.
+redis_options = { url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0") }
+
+Sidekiq.configure_server { |config| config.redis = redis_options }
+Sidekiq.configure_client { |config| config.redis = redis_options }
+
+require "sidekiq/cli"
+
+# Mirrors Sidekiq's own launcher. `parse` is the required step that reads
+# ARGV and config/sidekiq.yml; skipping it leaves the CLI uninitialised and
+# `run` fails on a nil config.
+cli = Sidekiq::CLI.instance
+cli.parse
+cli.run

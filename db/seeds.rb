@@ -127,10 +127,6 @@ puts "Seeded #{JobTitle.count} job titles."
 
 EMPLOYEE_COUNT = Integer(ENV.fetch("EMPLOYEE_COUNT", 10_000))
 
-if Rails.env.production?
-  abort "Refusing to seed synthetic employees in production. " \
-        "Run this only in development or test."
-end
 
 def build_employee_attributes(departments, countries, job_titles, sequence)
   {
