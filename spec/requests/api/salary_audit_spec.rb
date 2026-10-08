@@ -82,6 +82,15 @@ RSpec.describe "Salary audit history", type: :request do
       expect(versions_for(record).map { |row| row["changed_by"] }).to include("HR Manager")
     end
 
+    it "names the signed-in user for a change made through the API" do
+      record = create(:salary_record, employee: employee, effective_date: Date.new(2026, 1, 1), base_salary: 50_000)
+      patch "/api/v1/employees/#{employee.id}/salary/#{record.id}", params: { base_salary: "60000" }
+
+      get "/api/v1/employees/#{employee.id}/salary/audit"
+
+      expect(versions_for(record).map { |row| row["changed_by"] }).to include(hr_manager.email)
+    end
+
     it "answers when it changed" do
       record = edited_salary
 

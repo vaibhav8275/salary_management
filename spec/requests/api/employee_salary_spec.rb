@@ -134,6 +134,13 @@ RSpec.describe "Employee salary", type: :request do
 
       expect(PaperTrail::Version.where(item_type: "SalaryRecord").count).to eq(1)
     end
+
+    it "attributes the version to the signed-in user" do
+      post "/api/v1/employees/#{employee.id}/salary",
+           params: { base_salary: "60000", bonus: "0", allowance: "0", effective_date: "2026-01-01" }
+
+      expect(latest_version_for(SalaryRecord.last).whodunnit).to eq(hr_manager.email)
+    end
   end
 
   describe "PATCH /api/v1/employees/:id/salary/:salary_record_id" do
@@ -173,6 +180,12 @@ RSpec.describe "Employee salary", type: :request do
       patch "/api/v1/employees/#{employee.id}/salary/#{record.id}", params: { base_salary: "62000" }
 
       expect(version_count_for(record)).to eq(2)
+    end
+
+    it "attributes the version to the signed-in user" do
+      patch "/api/v1/employees/#{employee.id}/salary/#{record.id}", params: { base_salary: "62000" }
+
+      expect(latest_version_for(record).whodunnit).to eq(hr_manager.email)
     end
 
     it "rejects a negative amount without changing the record" do

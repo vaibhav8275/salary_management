@@ -263,7 +263,7 @@
           },
           "whodunnit": {
             "type": "string",
-            "example": "HR Manager"
+            "example": "hr.manager@example.com"
           },
           "event": {
             "type": "string",
@@ -283,7 +283,7 @@
           },
           "changed_by": {
             "type": "string",
-            "example": "HR Manager"
+            "example": "hr.manager@example.com"
           },
           "changed_at": {
             "type": "string",
@@ -334,8 +334,7 @@
           },
           "created_by": {
             "type": "string",
-            "example": "hr.manager1@example.com",
-            "nullable": true
+            "example": "hr.manager1@example.com"
           },
           "created_at": {
             "type": "string",

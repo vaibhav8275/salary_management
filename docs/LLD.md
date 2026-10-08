@@ -666,7 +666,7 @@ Provenance lives on the **version**, not on the salary record:
 For a UI update:
   source         = manual
   salary_import_id = NULL
-  whodunnit      = HR Manager
+  whodunnit      = the signed-in user's email
 
 For a bulk import:
   source         = bulk_import

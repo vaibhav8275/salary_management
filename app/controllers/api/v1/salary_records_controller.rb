@@ -4,7 +4,6 @@ require "bigdecimal/util"
 module Api
   module V1
     class SalaryRecordsController < ApplicationController
-      HR_MANAGER = "HR Manager".freeze
       SOURCE_MANUAL = "manual".freeze
 
       def show
@@ -114,7 +113,7 @@ module Api
       end
 
       def manual
-        PaperTrail.request(whodunnit: HR_MANAGER, controller_info: { source: SOURCE_MANUAL }) { yield }
+        PaperTrail.request(whodunnit: current_user.email, controller_info: { source: SOURCE_MANUAL }) { yield }
       end
 
       # One entry per salary record, in the order the records' latest change
