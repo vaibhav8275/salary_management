@@ -91,7 +91,7 @@ group :development, :test do
   gem "json", "~> 2.21"
 end
 gem "faker", "~> 3.8"
-gem "rspec-rails", "~> 8.0"
+gem "rspec-rails", "~> 8.1"
 
 gem "blueprinter", "~> 1.3"
 
